@@ -1,0 +1,565 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* ── Light Mode Design Tokens ── */
+    --bg-canvas:      #F8FAFC;
+    --bg-surface:     #FFFFFF;
+    --bg-sidebar:     #0F172A;
+    --border-subtle:  #E2E8F0;
+    --border-active:  #BFDBFE;
+    --text-primary:   #0F172A;
+    --text-secondary: #64748B;
+    --text-muted:     #94A3B8;
+    --blue-primary:   #2563EB;
+    --blue-light:     #EFF6FF;
+    --blue-mid:       #DBEAFE;
+    --navy-active:    #1E3A5F;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  body {
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .font-mono, code, pre, [class*="font-mono"] {
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace !important;
+  }
+}
+
+/* ─── Scrollbars (light) ─────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+
+/* ─── Animations ─────────────────────────────────── */
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);   opacity: 1; }
+}
+@keyframes slideInUp {
+  from { transform: translateY(10px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes pulseSubtle {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+
+.slide-in-right { animation: slideInRight 0.26s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.slide-in-up    { animation: slideInUp 0.2s ease both; }
+.fade-in        { animation: fadeIn 0.18s ease both; }
+.pulse-subtle   { animation: pulseSubtle 2s infinite ease-in-out; }
+
+/* ─── Sidebar logo / brand button ────────────────── */
+/* Wraps the entire Train icon + RailSync text + division subtitle block.  */
+/* Clicking anywhere on it navigates to the "Today at a glance" view.      */
+.sidebar-brand-button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  border-radius: 0;          /* flush with sidebar top */
+  outline: none;
+}
+.sidebar-brand-button:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.sidebar-brand-button:focus-visible {
+  box-shadow: inset 0 0 0 2px #60A5FA;
+}
+
+/* ─── Sidebar nav item ────────────────────────────── */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #94A3B8;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+.nav-item:hover {
+  background: rgba(255,255,255,0.06);
+  color: #E2E8F0;
+}
+.nav-item.active {
+  background: #1E3A5F;
+  color: #FFFFFF;
+}
+.nav-item.active svg { color: #60A5FA; }
+
+.sidebar-brand-button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.sidebar-brand-button:hover { background: rgba(255,255,255,0.04); }
+.sidebar-brand-button:focus-visible {
+  outline: 2px solid #60A5FA;
+  outline-offset: -3px;
+  border-radius: 4px;
+}
+
+.today-glance { width: 100%; max-width: 672px; }
+.today-glance h1 {
+  margin: 0 0 22px;
+  color: #0F172A;
+  font-size: 30px;
+  line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+.today-glance-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.today-glance-card {
+  width: 100%;
+  min-width: 0;
+  padding: 20px 22px;
+  border: 1px solid #E2E8F0;
+  border-radius: 16px;
+  background: #FFFFFF;
+  box-shadow: 0 2px 8px rgba(15,23,42,0.04);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.today-glance-card:hover {
+  transform: translateY(-2px);
+  border-color: #CBD5E1;
+  box-shadow: 0 8px 18px rgba(15,23,42,0.09);
+}
+.today-glance-card:focus-visible {
+  outline: 3px solid rgba(37,99,235,0.45);
+  outline-offset: 3px;
+}
+.today-glance-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+}
+.today-glance-chip {
+  border-radius: 9999px;
+  padding: 5px 10px;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 700;
+}
+.today-glance-number {
+  margin-top: 14px;
+  font-size: 42px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.045em;
+}
+.today-glance-label {
+  margin-top: 6px;
+  color: #0F172A;
+  font-size: 16px;
+  line-height: 1.3;
+  font-weight: 700;
+}
+.today-glance-helper {
+  margin-top: 12px;
+  color: #64748B;
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* ─── Queue card ─────────────────────────────────── */
+.queue-card {
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid #E2E8F0;
+  background: #FFFFFF;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+.queue-card:hover {
+  border-color: #BFDBFE;
+  background: #F8FAFC;
+}
+.queue-card.selected {
+  background: #EFF6FF;
+  border-color: #93C5FD;
+  box-shadow: 0 0 0 3px rgba(147,197,253,0.15);
+}
+
+/* ─── FSM Stepper ────────────────────────────────── */
+.fsm-step { display: inline-flex; align-items: center; }
+.fsm-step-active {
+  border: 1.5px solid #2563EB;
+  border-radius: 9999px;
+  padding: 2px 10px;
+  font-weight: 700;
+  color: #1D4ED8;
+  background: #EFF6FF;
+}
+.fsm-dash {
+  display: inline-block;
+  width: 18px;
+  height: 1px;
+  border-top: 1.5px dashed #CBD5E1;
+  margin: 0 4px;
+  vertical-align: middle;
+}
+
+/* ─── Action pane section card ───────────────────── */
+.section-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 20px 24px;
+}
+
+/* ─── Sign button ────────────────────────────────── */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  background: #2563EB;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 7px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-primary:hover { background: #1D4ED8; }
+.btn-primary:disabled { background: #93C5FD; cursor: not-allowed; }
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: #FFFFFF;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 7px;
+  border: 1px solid #E2E8F0;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn-secondary:hover { background: #F8FAFC; border-color: #CBD5E1; }
+
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: #FEF2F2;
+  color: #DC2626;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 7px;
+  border: 1px solid #FECACA;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-danger:hover { background: #FEE2E2; }
+
+/* ─── Badge / Pill ───────────────────────────────── */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  background: #F1F5F9;
+  color: #475569;
+  border: 1px solid #E2E8F0;
+}
+
+/* ─── Statutory auth row ─────────────────────────── */
+.auth-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid #F1F5F9;
+}
+.auth-row:last-child { border-bottom: none; }
+
+/* ─── Dropdown ───────────────────────────────────── */
+.rs-select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: #0F172A;
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.rs-select:focus {
+  outline: none;
+  border-color: #93C5FD;
+  box-shadow: 0 0 0 3px rgba(147,197,253,0.25);
+}
+
+/* ─── Tab bar ────────────────────────────────────── */
+.tab-item {
+  padding: 8px 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #94A3B8;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tab-item.active {
+  color: #1D4ED8;
+  font-weight: 700;
+  border-bottom-color: #2563EB;
+}
+.tab-item:hover:not(.active) { color: #475569; }
+
+/* ─── Tooltip (light) ────────────────────────────── */
+.tooltip-container { position: relative; }
+.tooltip-container:hover .tooltip-box { opacity: 1; pointer-events: auto; transform: translateY(0); }
+.tooltip-box {
+  position: absolute;
+  z-index: 200;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background: #1E293B;
+  color: #F1F5F9;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s, transform 0.15s;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+}
+
+/* ─── Search bar ─────────────────────────────────── */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  flex: 1;
+  max-width: 400px;
+}
+.search-bar input {
+  border: none;
+  background: transparent;
+  color: #0F172A;
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  width: 100%;
+  outline: none;
+}
+.search-bar input::placeholder { color: #94A3B8; }
+
+/* ─── Today at a Glance view ──────────────────────── */
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.today-glance {
+  padding: 32px 36px;
+  min-height: 100%;
+  background: #F8FAFC;
+  overflow-y: auto;
+}
+
+.today-glance-header {
+  margin-bottom: 28px;
+  animation: fadeSlideUp 0.22s ease both;
+}
+
+.today-glance-title {
+  font-size: 26px;
+  font-weight: 800;
+  color: #0F172A;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  margin: 0 0 6px;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+.today-glance-subtitle {
+  font-size: 13px;
+  color: #64748B;
+  margin: 0;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Vertical card column — max-w-2xl, left-aligned */
+.today-glance-cards {
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Individual card */
+.today-glance-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 16px;           /* rounded-2xl */
+  padding: 20px 24px;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
+  cursor: pointer;
+  outline: none;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  animation: fadeSlideUp 0.32s ease both;
+  /* font-family reset so parent Inter is used */
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+.today-glance-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.10);
+}
+.today-glance-card:focus-visible {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.30);
+}
+
+/* Row 1: icon + chip */
+.today-glance-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+/* Status chip */
+.today-glance-chip {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  line-height: 1.5;
+  /* background and color applied via inline style from card definition */
+}
+
+/* Large bold count */
+.today-glance-number {
+  font-size: 48px;
+  font-weight: 800;
+  line-height: 1;
+  margin-bottom: 6px;
+  letter-spacing: -0.02em;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  /* color applied via inline style */
+}
+
+/* Bold label */
+.today-glance-label {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0F172A;
+  margin-bottom: 8px;
+  letter-spacing: -0.01em;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Monospace helper text */
+.today-glance-helper {
+  font-size: 11px;
+  color: #94A3B8;
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  letter-spacing: 0.02em;
+}
+
+/* ─── Compact Glance Popover ─────────────────────── */
+@keyframes glanceScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.glance-popover-container {
+  top: 14px;
+  left: 232px;
+}
+
+@media (max-width: 640px) {
+  .glance-popover-container {
+    top: 68px !important;
+    left: 12px !important;
+    right: 12px !important;
+    width: auto !important;
+    max-width: none !important;
+  }
+}
+
+.glance-popover-row:hover {
+  background: #F8FAFC !important;
+  border-color: #BFDBFE !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+}
+
+.glance-popover-row:focus-visible {
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.35) !important;
+  border-color: #2563EB !important;
+}
