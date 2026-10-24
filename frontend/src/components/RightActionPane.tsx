@@ -5,7 +5,7 @@ import {
   Lock, Unlock, Activity, Camera, MapPin, Users, Plus,
   Share2, Printer, X, Eye, Zap, ShieldCheck, ArrowRight,
   AlertTriangle, RotateCcw, ChevronLeft, ChevronRight,
-  FileText, Flag, Radio, Phone, Info
+  FileText, Flag, Radio, Phone, Info, OctagonX
 } from 'lucide-react';
 import { OperationalEvent, ApprovalRole, Department, PiggybackedDepartment } from '../types';
 import {
@@ -19,6 +19,7 @@ interface RightActionPaneProps {
   onUpdateEvent?: (updated: OperationalEvent) => void;
   onNavigateAudit?: () => void;
   isHistoryTab?: boolean;
+  onReapproveEvent?: (eventId: string) => void;
 }
 
 // 7-step full lifecycle stepper per Indian Railways operating manual
@@ -38,6 +39,7 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
   onUpdateEvent,
   onNavigateAudit,
   isHistoryTab = false,
+  onReapproveEvent,
 }) => {
   const [loading, setLoading] = useState(false);
   const [loadingRole, setLoadingRole] = useState<string | null>(null);
@@ -316,6 +318,8 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
   const photoUploaded = event.field_photo?.uploaded_at || '10:14 AM via RailSync Field App';
   const supervisorName = event.field_photo?.gang_supervisor || `${event.originator_id} (Field Custodian)`;
 
+  const isSuspended = Boolean(event.is_suspended || (event.status as string) === 'SUSPENDED - EMERGENCY STOP');
+
   return (
     <div
       style={{
@@ -328,6 +332,78 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
         gap: 20,
       }}
     >
+      {/* ── Suspended Work Banner (Emergency Stop Active) ──────── */}
+      {isSuspended && (
+        <div
+          style={{
+            background: '#FEF2F2',
+            border: '1.5px solid #F87171',
+            borderRadius: 10,
+            padding: '16px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 16,
+            boxShadow: '0 2px 8px rgba(220, 38, 38, 0.08)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 260, flex: 1 }}>
+            <div
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: '50%',
+                background: '#FEE2E2',
+                border: '1.5px solid #FCA5A5',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#DC2626',
+                flexShrink: 0,
+              }}
+            >
+              <OctagonX size={20} />
+            </div>
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 800, color: '#991B1B', letterSpacing: '-0.01em' }}>
+                ⛔ WORK SUSPENDED — EMERGENCY STOP
+              </div>
+              <div style={{ fontSize: 12, color: '#7F1D1D', marginTop: 3 }}>
+                This work was suspended on {event.suspended_at ? new Date(event.suspended_at).toLocaleString() : 'recently'} by <strong>{event.suspended_by || 'Station Master Desk'}</strong>.
+              </div>
+              <div style={{ fontSize: 11.5, color: '#991B1B', fontWeight: 600, marginTop: 4 }}>
+                Reason: <span style={{ fontWeight: 400, fontStyle: 'italic' }}>{event.suspension_reason || 'Executive Emergency Safety Stop ordered.'}</span>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            id="pane-reapprove-btn"
+            onClick={() => onReapproveEvent && onReapproveEvent(event.id)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 7,
+              padding: '10px 20px',
+              borderRadius: 8,
+              border: 'none',
+              background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
+              color: '#FFFFFF',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(22,163,74,0.3)',
+              transition: 'all 0.15s ease',
+              flexShrink: 0,
+            }}
+          >
+            <CheckCircle2 size={16} />
+            <span>Re-approve &amp; Resume Work</span>
+          </button>
+        </div>
+      )}
       {/* ── Operational Corridor Awareness & Safety Status Strip ── */}
       <div
         id="corridor-awareness-banner"
@@ -1488,7 +1564,7 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
           </div>
           <div>
             <span style={{ color: '#64748B', display: 'block', fontSize: 10.5 }}>ISSUED BY:</span>
-            <strong style={{ color: '#0F172A' }}>Ravi Amish (SM/WDA)</strong>
+            <strong style={{ color: '#0F172A' }}>Divya Singh (SM/PNBE Desk #01)</strong>
           </div>
           <div>
             <span style={{ color: '#64748B', display: 'block', fontSize: 10.5 }}>VALID UNTIL:</span>
@@ -1863,7 +1939,7 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    Station Master (Ravi Amish, SM/PNBE Desk #01)
+                    Station Master (Divya Singh, SM/PNBE Desk #01)
                     {isSmApproved && (
                       <span style={{ fontSize: 10, fontWeight: 600, background: '#DCFCE7', color: '#16A34A', padding: '1px 6px', borderRadius: 4 }}>
                         ✓ MASTER SEAL GRANTED
@@ -2060,7 +2136,7 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
               </div>
               <div>
                 <span style={{ color: '#64748B', display: 'block', fontSize: 10.5 }}>GRANTING STATION MASTER:</span>
-                <strong>Ravi Amish (SM/PNBE Desk #01)</strong>
+                <strong>Divya Singh (SM/PNBE Desk #01)</strong>
               </div>
             </div>
 

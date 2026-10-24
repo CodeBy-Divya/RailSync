@@ -6,7 +6,6 @@ import { RightActionPane }   from './components/RightActionPane';
 import { AuditLedgerView }   from './components/AuditLedgerView';
 import { OverviewDashboard } from './components/OverviewDashboard';
 import { ChaosSreDashboard } from './components/ChaosSreDashboard';
-import { AndroidFieldApp }   from './components/AndroidFieldApp';
 import { LoginView }         from './components/LoginView';
 import { WorkRequestModal }  from './components/WorkRequestModal';
 import { TodayAtAGlance }   from './components/TodayAtAGlance';
@@ -16,9 +15,15 @@ import { fetchEvents, fetchHealth, getOrCreateTraceparent } from './api';
 import { OperationalEvent }  from './types';
 import { INITIAL_OPERATIONAL_EVENTS, eventMatchesSection } from './data/corridorData';
 import { getEventCategory }  from './components/MiddleColumn';
+import { EmergencyBanner }   from './components/EmergencyBanner';
+import { useEmergencyStop }  from './hooks/useEmergencyStop';
+import { MessagesPage }      from './components/MessagesPage';
+import { useChatStore }      from './hooks/useChatStore';
+import { SupportDrawer }     from './components/support/SupportDrawer';
+import { useSupportStore }   from './hooks/useSupportStore';
 import { CheckCircle2, X }   from 'lucide-react';
 
-export type View = 'workspace' | 'audit' | 'overview' | 'today' | 'chaos' | 'android_app';
+export type View = 'workspace' | 'audit' | 'overview' | 'today' | 'chaos' | 'messages';
 
 const USER_EVENTS_STORAGE_KEY = 'railsync_created_events_v2';
 
@@ -47,8 +52,10 @@ export function App() {
   } | null>(null);
   const [activeView,        setActiveView]        = useState<View>('workspace');
   const [isGlanceOpen,      setIsGlanceOpen]      = useState(false);
+  const [isSupportOpen,     setIsSupportOpen]     = useState(false);
   const logoButtonRef                             = React.useRef<HTMLButtonElement>(null);
   const workRequestBtnRef                         = React.useRef<HTMLButtonElement>(null);
+  const supportButtonRef                          = React.useRef<HTMLButtonElement>(null);
   const [events,            setEvents]            = useState<OperationalEvent[]>(getInitialEvents);
   const [selectedEvent,     setSelectedEvent]     = useState<OperationalEvent | null>(() => getInitialEvents()[0]);
   const [activeTab,         setActiveTab]         = useState(1); // 1 = Pending Approvals
@@ -68,6 +75,94 @@ export function App() {
     '23:02:18Z [GSR-INVARIANT]: 6 Invariants evaluated. Dual-key approval matrix dispatched.',
     '23:00:00Z [COA-FOIS]: Danapur Section Controller pacing freight rake N/BOXNHL-243 via Down Main at TSR 30 km/h.',
   ]);
+
+  const addAmbientNotification = useCallback((msg: string) => {
+    setAmbientNotifs(prev => [msg, ...prev.slice(0, 30)]);
+  }, []);
+
+  const handleWorkResumed = useCallback((resumedCount: number, remainingCount: number, resumedIds: string[]) => {
+    if (remainingCount === 0) {
+      setToastMessage(
+        `All ${resumedCount} works resumed. Track possession and catenary power re-instated.`
+      );
+    } else {
+      setToastMessage(
+        resumedCount === 1
+          ? `Work ${resumedIds[0]} resumed. Track possession active (${remainingCount} still suspended).`
+          : `${resumedCount} works resumed (${remainingCount} still suspended).`
+      );
+    }
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 5000);
+  }, []);
+
+  // Emergency Stop & Statutory Suspension Hook
+  const {
+    emergencyState,
+    suspendedEvents,
+    ongoingCount,
+    activateEmergencyStop,
+    reapproveEvent,
+    reapproveAllSuspended,
+  } = useEmergencyStop(events, setEvents, currentUser, addAmbientNotification, handleWorkResumed);
+
+  // Two-Way Control Desk Clarification & Chat Store
+  const chatStore = useChatStore(currentUser);
+
+  // Support Desk Store
+  const supportStore = useSupportStore(
+    currentUser,
+    addAmbientNotification,
+    chatStore.sendMessage
+  );
+
+  // Clear unread badge when Messages view is open
+  useEffect(() => {
+    if (activeView === 'messages') {
+      chatStore.markAllRead();
+    }
+  }, [activeView, chatStore.markAllRead]);
+
+  // Always derive live, up-to-date selected event from events array
+  const currentSelectedEvent = useMemo(() => {
+    if (!selectedEvent) return null;
+    return events.find(e => e.id === selectedEvent.id) || selectedEvent;
+  }, [events, selectedEvent]);
+
+  const handleReapproveSingle = useCallback((eventId: string) => {
+    reapproveEvent(eventId);
+    setEvents(prev => {
+      const match = prev.find(e => e.id === eventId);
+      if (match) {
+        setSelectedEvent({
+          ...match,
+          is_suspended: false,
+          status: 'ACTIVE_IN_PROGRESS' as any,
+          fsm_stage: 6,
+        });
+      }
+      return prev;
+    });
+  }, [reapproveEvent]);
+
+  const handleReapproveAll = useCallback(() => {
+    reapproveAllSuspended();
+    setEvents(prev => {
+      if (selectedEvent) {
+        const match = prev.find(e => e.id === selectedEvent.id);
+        if (match) {
+          setSelectedEvent({
+            ...match,
+            is_suspended: false,
+            status: 'ACTIVE_IN_PROGRESS' as any,
+            fsm_stage: 6,
+          });
+        }
+      }
+      return prev;
+    });
+  }, [reapproveAllSuspended, selectedEvent]);
   const glanceCounts = useMemo(() => {
     const tabCounts = [0, 0, 0];
     events.forEach(event => {
@@ -133,11 +228,24 @@ export function App() {
     try {
       const data = await fetchEvents();
       if (Array.isArray(data) && data.length > 0) {
-        // Merge fetched events with baseline so all sections remain available
+        // Merge fetched events with baseline so all sections remain available,
+        // preserving client-side suspension/resumption state
         setEvents(prev => {
+          const prevMap = new Map(prev.map(p => [p.id, p]));
+          const mergedFetched = data.map(d => {
+            const existing = prevMap.get(d.id);
+            if (existing) {
+              return {
+                ...d,
+                ...existing,
+                station_actions: existing.station_actions || d.station_actions,
+              };
+            }
+            return d;
+          });
           const fetchedIds = new Set(data.map(d => d.id));
           const nonOverlapping = prev.filter(e => !fetchedIds.has(e.id));
-          return [...data, ...nonOverlapping];
+          return [...mergedFetched, ...nonOverlapping];
         });
       }
     } catch (err) {
@@ -159,8 +267,21 @@ export function App() {
   useEffect(() => {
     loadEvents();
     checkHealth();
-    const t = setInterval(checkHealth, 20_000);
-    return () => clearInterval(t);
+    const eventInterval = setInterval(loadEvents, 3000);
+    const healthInterval = setInterval(checkHealth, 20_000);
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === USER_EVENTS_STORAGE_KEY) {
+        loadEvents();
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      clearInterval(eventInterval);
+      clearInterval(healthInterval);
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, [loadEvents, checkHealth]);
 
   // ── WebSocket for ambient telemetry ───────────────
@@ -262,6 +383,10 @@ export function App() {
         setIsOfflineMode={setIsOfflineMode}
         wsConnected={wsConnected}
         canaryHealthy={canaryHealthy}
+        unreadMessagesCount={chatStore.unreadCount}
+        onOpenSupportDesk={() => setIsSupportOpen(true)}
+        supportButtonRef={supportButtonRef}
+        unreadTicketsCount={supportStore.unreadCount}
       />
 
       {/* ── Main Content Area ──────────────────────── */}
@@ -287,6 +412,25 @@ export function App() {
           onSearchChange={setSearchQuery}
           onOpenWorkRequest={() => setIsModalOpen(true)}
           workRequestBtnRef={workRequestBtnRef}
+          unreadMessagesCount={chatStore.unreadCount}
+          currentUser={currentUser}
+        />
+
+        {/* ── Persistent Emergency Stop Active Banner ── */}
+        <EmergencyBanner
+          emergencyState={emergencyState}
+          suspendedCount={suspendedEvents.length}
+          onViewInPending={() => {
+            setSelectedSectionId('ALL');
+            setSelectedDept('ALL');
+            setSearchQuery('');
+            setActiveView('workspace');
+            setActiveTab(1); // 1 = Pending Approvals tab
+            const firstSuspended = events.find(e => e.is_suspended || (e.status as string) === 'SUSPENDED - EMERGENCY STOP');
+            if (firstSuspended) {
+              setSelectedEvent(firstSuspended);
+            }
+          }}
         />
 
         {/* ── Active View Rendering ──────────────────── */}
@@ -302,7 +446,7 @@ export function App() {
             {/* Middle Column — Queue with Section & Tab Filtering */}
             <MiddleColumn
               events={events}
-              selectedEvent={selectedEvent}
+              selectedEvent={currentSelectedEvent}
               onSelectEvent={setSelectedEvent}
               activeTab={activeTab}
               setActiveTab={setActiveTab}
@@ -312,15 +456,17 @@ export function App() {
               onSelectDept={setSelectedDept}
               searchQuery={searchQuery}
               highlightedEventId={highlightedEventId}
+              onReapproveAll={handleReapproveAll}
             />
 
             {/* Right Action Pane — Detailed Review, Authorizations & Seal */}
             <RightActionPane
-              event={selectedEvent}
+              event={currentSelectedEvent}
               onRefresh={loadEvents}
               onUpdateEvent={handleLocalSign}
               onNavigateAudit={() => setActiveView('audit')}
               isHistoryTab={activeTab === 2}
+              onReapproveEvent={handleReapproveSingle}
             />
           </div>
         )}
@@ -344,15 +490,19 @@ export function App() {
 
         {activeView === 'chaos' && (
           <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', background: '#F8FAFC' }}>
-            <ChaosSreDashboard />
+            <ChaosSreDashboard
+              ongoingCount={ongoingCount}
+              currentUser={currentUser}
+              onActivateEmergencyStop={activateEmergencyStop}
+            />
           </div>
         )}
 
-        {activeView === 'android_app' && (
-          <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', background: '#F8FAFC' }}>
-            <AndroidFieldApp
-              onEventCreated={loadEvents}
-              onNavigateToPortal={() => setActiveView('workspace')}
+        {activeView === 'messages' && (
+          <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+            <MessagesPage
+              currentUser={currentUser}
+              chatStore={chatStore}
             />
           </div>
         )}
@@ -413,6 +563,36 @@ export function App() {
         currentUser={currentUser}
         onUpdateEvent={handleLocalSign}
         onAddAmbientNotification={(msg) => setAmbientNotifs(prev => [msg, ...prev.slice(0, 30)])}
+      />
+
+      {/* ── Support Desk Slide-Over Drawer ─────────── */}
+      <SupportDrawer
+        isOpen={isSupportOpen}
+        onClose={() => {
+          setIsSupportOpen(false);
+          supportButtonRef.current?.focus();
+        }}
+        events={events}
+        currentUser={currentUser}
+        onSelectEvent={(evt) => {
+          setSelectedEvent(evt);
+          setActiveView('workspace');
+        }}
+        onNavigateMessages={(dept) => {
+          setActiveView('messages');
+          if (dept) {
+            const mapped =
+              dept === 'OPERATING' ? 'operating' :
+              dept === 'OHE' ? 'ohe' :
+              dept === 'S_AND_T' ? 'sandt' :
+              dept === 'CIVIL_P_WAY' ? 'civil' : 'all';
+            chatStore.setActiveChannel(mapped);
+          }
+        }}
+        supportStore={supportStore}
+        isOfflineMode={isOfflineMode}
+        wsConnected={wsConnected}
+        canaryHealthy={canaryHealthy}
       />
     </div>
   );

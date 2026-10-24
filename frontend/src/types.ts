@@ -140,6 +140,12 @@ export interface OperationalEvent {
   piggybacked_depts?: PiggybackedDepartment[];
   station_actions?: StationMasterActions;
   digital_permit?: DigitalPermitMemo;
+  is_suspended?: boolean;
+  suspended_at?: string;
+  suspended_by?: string;
+  suspension_reason?: string;
+  previous_status?: EventStatus | string;
+  previous_fsm_stage?: number;
 }
 
 export interface AuditLeaf {

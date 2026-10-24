@@ -49,6 +49,10 @@ export function useCountdown(
     status === 'AUDIT_LOCKED' ||
     status === 'SAFETY_VERIFIED';
 
+  const isSuspended =
+    status?.includes('SUSPENDED') ||
+    status === 'SUSPENDED - EMERGENCY STOP';
+
   const isNotStarted = status === 'Not Started' || status === 'DRAFT' || status === 'SUBMITTED';
 
   // Base dates from event data
@@ -114,7 +118,7 @@ export function useCountdown(
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    if (isCompleted || isNotStarted) return;
+    if (isCompleted || isNotStarted || isSuspended) return;
 
     const intervalId = window.setInterval(() => {
       setTick(t => t + 1);
@@ -123,9 +127,27 @@ export function useCountdown(
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [isCompleted, isNotStarted]);
+  }, [isCompleted, isNotStarted, isSuspended]);
 
   const plannedDurationText = formatDurationHuman(plannedDurationMs);
+
+  // If Suspended (Emergency Stop)
+  if (isSuspended) {
+    return {
+      mode: 'NOT_STARTED',
+      timeRemainingText: 'Paused (Suspended)',
+      cardCountdownText: 'Paused (Suspended)',
+      detailedRemainingText: 'Paused (Suspended) • Work halted by Emergency Stop',
+      startTimeText,
+      endTimeText,
+      targetWindowText,
+      plannedDurationText,
+      actualElapsedText: 'Paused',
+      elapsedHHMMSS: '00:00:00',
+      completionTimeText: '',
+      progressPercent: 50,
+    };
+  }
 
   // If Completed
   if (isCompleted) {

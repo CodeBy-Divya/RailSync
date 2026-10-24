@@ -474,7 +474,7 @@ export const TeamNotificationPanel: React.FC<TeamNotificationPanelProps> = ({
                   <User size={12} />
                   <span>
                     Signing as:{' '}
-                    <strong>{currentUser?.name || 'Ravi Amish (Station Master)'}</strong>
+                    <strong>{currentUser?.name || 'Divya Singh (Station Master)'}</strong>
                   </span>
                 </div>
 

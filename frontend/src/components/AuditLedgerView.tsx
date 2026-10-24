@@ -21,10 +21,25 @@ import { AuditBlock } from '../types';
 import { fetchAuditLedger } from '../api';
 import { INITIAL_AUDIT_BLOCKS } from '../data/corridorData';
 
+const AUDIT_BLOCKS_KEY = 'railsync_audit_blocks_v2';
+
+const getInitialAuditBlocks = (): AuditBlock[] => {
+  try {
+    const saved = localStorage.getItem(AUDIT_BLOCKS_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return [...parsed, ...INITIAL_AUDIT_BLOCKS];
+      }
+    }
+  } catch (_) {}
+  return INITIAL_AUDIT_BLOCKS;
+};
+
 export const AuditLedgerView: React.FC = () => {
-  const [ledgerBlocks, setLedgerBlocks] = useState<AuditBlock[]>(INITIAL_AUDIT_BLOCKS);
+  const [ledgerBlocks, setLedgerBlocks] = useState<AuditBlock[]>(getInitialAuditBlocks);
   const [loading, setLoading] = useState(false);
-  const [selectedBlock, setSelectedBlock] = useState<AuditBlock | null>(INITIAL_AUDIT_BLOCKS[0]);
+  const [selectedBlock, setSelectedBlock] = useState<AuditBlock | null>(() => getInitialAuditBlocks()[0]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSection, setSelectedSection] = useState('ALL');
   const [selectedDept, setSelectedDept] = useState('ALL');
@@ -35,15 +50,32 @@ export const AuditLedgerView: React.FC = () => {
   const loadLedger = async () => {
     setLoading(true);
     setVerifiedMsg(null);
+    const localCustom: AuditBlock[] = (() => {
+      try {
+        const s = localStorage.getItem(AUDIT_BLOCKS_KEY);
+        return s ? JSON.parse(s) : [];
+      } catch (_) {
+        return [];
+      }
+    })();
+
     try {
       const data = await fetchAuditLedger();
       if (data.blocks && data.blocks.length > 0) {
-        setLedgerBlocks(data.blocks);
-        setSelectedBlock(data.blocks[0]);
+        const merged = [...localCustom, ...data.blocks];
+        setLedgerBlocks(merged);
+        setSelectedBlock(merged[0]);
+      } else {
+        const merged = [...localCustom, ...INITIAL_AUDIT_BLOCKS];
+        setLedgerBlocks(merged);
+        setSelectedBlock(merged[0]);
       }
       setVerifiedMsg('Cryptographic integrity confirmed: 0 block collisions, 0 tampering detected.');
     } catch {
       // Graceful offline fallback
+      const merged = [...localCustom, ...INITIAL_AUDIT_BLOCKS];
+      setLedgerBlocks(merged);
+      setSelectedBlock(merged[0]);
       setVerifiedMsg('Cryptographic integrity confirmed: 0 block collisions, 0 tampering detected.');
     } finally {
       setLoading(false);

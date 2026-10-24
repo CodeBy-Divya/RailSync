@@ -8,25 +8,22 @@ import {
 } from 'lucide-react';
 import { OperationalEvent } from '../types';
 import { createEvent, fetchEvents, activateWork, completeWork } from '../api';
+import { useChatStore, ChatMessage } from '../hooks/useChatStore';
 
 interface AndroidFieldAppProps {
   onEventCreated?: () => void;
   onNavigateToPortal?: () => void;
-}
-
-interface ChatMessage {
-  id: string;
-  sender: string;
-  role: 'FIELD_SUPERVISOR' | 'STATION_MASTER' | 'TPC' | 'CONTROLLER';
-  text: string;
-  timestamp: string;
-  taggedDepts?: string[];
+  chatStore?: ReturnType<typeof useChatStore>;
 }
 
 export const AndroidFieldApp: React.FC<AndroidFieldAppProps> = ({
   onEventCreated,
   onNavigateToPortal,
+  chatStore: externalChatStore,
 }) => {
+  const internalChatStore = useChatStore();
+  const { messages: chatMessages, sendMessage } = externalChatStore || internalChatStore;
+
   // Mobile device simulator state
   const [deviceFrame, setDeviceFrame] = useState(true);
   const [activeTab, setActiveTab] = useState<'permits' | 'requisition' | 'camera' | 'queries'>('permits');
@@ -70,30 +67,6 @@ export const AndroidFieldApp: React.FC<AndroidFieldAppProps> = ({
   const [submittingReq, setSubmittingReq] = useState(false);
 
   // Live Clarification Thread (Field Crew <-> Station Master)
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    {
-      id: 'msg-1',
-      sender: 'Station Master (PNBE)',
-      role: 'STATION_MASTER',
-      text: 'Section Controller confirmed path margin. Confirm physical earthing rod clamp deployed on FP-02 catenary.',
-      timestamp: '13:02 UTC',
-    },
-    {
-      id: 'msg-2',
-      sender: 'SSE / OHE (Field Supervisor)',
-      role: 'FIELD_SUPERVISOR',
-      text: 'Earthing rods clamped at KM 548/14. Photo evidence uploaded with chainage watermark. Requesting Form ETR-3 token.',
-      timestamp: '13:05 UTC',
-      taggedDepts: ['@OHE', '@OPERATING'],
-    },
-    {
-      id: 'msg-3',
-      sender: 'TPC Danapur Grid',
-      role: 'TPC',
-      text: 'Circuit breaker CB-204 tripped. 25kV catenary dead. Form ETR-1 clearance issued to SM.',
-      timestamp: '13:08 UTC',
-    },
-  ]);
   const [newChatText, setNewChatText] = useState('');
   const [selectedTaggedDept, setSelectedTaggedDept] = useState('@OPERATING');
 
@@ -193,34 +166,16 @@ export const AndroidFieldApp: React.FC<AndroidFieldAppProps> = ({
     }
   };
 
-  // Send Chat Query to Station Master
+  // Send Chat Query to Station Master via shared store
   const handleSendChat = () => {
     if (!newChatText.trim()) return;
-    const msg: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      sender: 'SSE / OHE (Field Supervisor)',
-      role: 'FIELD_SUPERVISOR',
+    sendMessage({
       text: newChatText,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' UTC',
       taggedDepts: [selectedTaggedDept],
-    };
-
-    setChatMessages(prev => [...prev, msg]);
+      overrideSender: 'SSE / OHE (Field Supervisor)',
+      overrideRole: 'FIELD_SUPERVISOR',
+    });
     setNewChatText('');
-
-    // Simulate Station Master automated response after 2 seconds
-    setTimeout(() => {
-      setChatMessages(prev => [
-        ...prev,
-        {
-          id: `msg-${Date.now() + 1}`,
-          sender: 'Station Master (PNBE)',
-          role: 'STATION_MASTER',
-          text: `[ACK] ${msg.taggedDepts?.[0] || '@OPERATING'}: Memo acknowledged on VDU panel. Interlock route padlocked. Fencing token valid.`,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' UTC',
-        },
-      ]);
-    }, 2000);
   };
 
   // Field Actions
@@ -1078,6 +1033,18 @@ export const AndroidFieldApp: React.FC<AndroidFieldAppProps> = ({
                         <div style={{ fontSize: 12, color: '#0F172A', lineHeight: 1.4 }}>
                           {msg.text}
                         </div>
+                        {msg.photos && msg.photos.length > 0 && (
+                          <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                            {msg.photos.map(p => (
+                              <img
+                                key={p.id}
+                                src={p.url}
+                                alt={p.caption || 'Field proof'}
+                                style={{ width: 64, height: 64, borderRadius: 6, objectFit: 'cover', border: '1px solid #CBD5E1' }}
+                              />
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

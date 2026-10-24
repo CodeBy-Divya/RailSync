@@ -1,11 +1,11 @@
 import React from 'react';
 import {
-  Train, LayoutDashboard, CheckSquare, ClockIcon, HelpCircle, ArrowRight, Flame, Smartphone
+  Train, LayoutDashboard, CheckSquare, ClockIcon, HelpCircle, ArrowRight, Flame, Smartphone, MessageSquare
 } from 'lucide-react';
 
 interface SidebarProps {
   activeView: string;
-  setActiveView: (v: 'workspace' | 'audit' | 'overview' | 'today' | 'chaos' | 'android_app') => void;
+  setActiveView: (v: 'workspace' | 'audit' | 'overview' | 'today' | 'chaos' | 'messages') => void;
   onGoToToday?: () => void;
   onToggleGlance?: () => void;
   isGlanceOpen?: boolean;
@@ -14,13 +14,17 @@ interface SidebarProps {
   setIsOfflineMode: (v: boolean) => void;
   wsConnected: boolean;
   canaryHealthy: boolean;
+  unreadMessagesCount?: number;
+  onOpenSupportDesk?: () => void;
+  supportButtonRef?: React.RefObject<HTMLButtonElement | null>;
+  unreadTicketsCount?: number;
 }
 
 const NAV_ITEMS = [
   { id: 'workspace',   label: 'Approval Portal',    icon: CheckSquare     },
-  { id: 'android_app', label: 'Field Android App',  icon: Smartphone      },
   { id: 'audit',       label: 'Audit & History',    icon: ClockIcon       },
   { id: 'overview',    label: 'Corridor Overview',  icon: LayoutDashboard },
+  { id: 'messages',    label: 'Messages',           icon: MessageSquare   },
   { id: 'chaos',       label: 'SRE & Chaos Suite',  icon: Flame           },
 ];
 
@@ -31,6 +35,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleGlance,
   isGlanceOpen = false,
   logoButtonRef,
+  unreadMessagesCount = 0,
+  onOpenSupportDesk,
+  supportButtonRef,
+  unreadTicketsCount = 0,
 }) => {
   const handleLogoClick = () => {
     if (onToggleGlance) {
@@ -119,7 +127,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             return (
               <button
                 key={id}
-                onClick={() => setActiveView(id as 'workspace' | 'audit' | 'overview' | 'chaos' | 'android_app')}
+                onClick={() => setActiveView(id as 'workspace' | 'audit' | 'overview' | 'today' | 'chaos' | 'messages')}
                 className={`nav-item${isActive ? ' active' : ''}`}
                 style={{
                   position: 'relative',
@@ -152,7 +160,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }}
               >
                 <Icon size={15} color={isActive ? '#60A5FA' : '#94A3B8'} />
-                <span>{label}</span>
+                <span style={{ flex: 1 }}>{label}</span>
+                {id === 'messages' && unreadMessagesCount > 0 && (
+                  <span
+                    style={{
+                      background: '#DC2626',
+                      color: '#FFFFFF',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      padding: '1px 6px',
+                      borderRadius: 10,
+                      minWidth: 18,
+                      textAlign: 'center',
+                      boxShadow: '0 1px 3px rgba(220,38,38,0.4)',
+                    }}
+                  >
+                    {unreadMessagesCount}
+                  </span>
+                )}
                 {isActive && (
                   <span
                     style={{
@@ -175,47 +200,111 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* ── Bottom: Support Desk ───────────────────── */}
       <div
         style={{
-          padding: '16px 18px 20px',
+          padding: '12px 14px 16px',
           borderTop: '1px solid rgba(255,255,255,0.07)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <button
+          ref={supportButtonRef}
+          type="button"
+          role="button"
+          aria-label="Open Support Desk"
+          onClick={onOpenSupportDesk}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onOpenSupportDesk?.();
+            }
+          }}
+          className="w-full text-left rounded-xl transition-all duration-150 group cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900"
+          style={{
+            padding: '8px 10px',
+            background: 'transparent',
+            border: '1px solid transparent',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            width: '100%',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.borderColor = 'transparent';
+          }}
+        >
           <div
             style={{
-              width: 30,
-              height: 30,
+              width: 32,
+              height: 32,
               borderRadius: 8,
-              background: 'rgba(255,255,255,0.06)',
+              background: 'rgba(255,255,255,0.07)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               flexShrink: 0,
+              position: 'relative',
+              transition: 'background 0.15s ease',
             }}
+            className="group-hover:bg-blue-600/30 text-slate-400 group-hover:text-blue-400"
           >
-            <HelpCircle size={14} color="#94A3B8" />
+            <HelpCircle size={15} />
+            {unreadTicketsCount > 0 && (
+              <span
+                style={{
+                  position: 'absolute',
+                  top: -2,
+                  right: -2,
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background: '#DC2626',
+                  border: '1.5px solid #0F172A',
+                }}
+              />
+            )}
           </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#CBD5E1', lineHeight: 1.2 }}>
-              Support Desk
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#CBD5E1', lineHeight: 1.2 }}>
+                Support Desk
+              </span>
+              {unreadTicketsCount > 0 && (
+                <span
+                  style={{
+                    fontSize: 9.5,
+                    fontWeight: 800,
+                    padding: '1px 5px',
+                    borderRadius: 9999,
+                    background: '#DC2626',
+                    color: '#FFFFFF',
+                  }}
+                >
+                  {unreadTicketsCount}
+                </span>
+              )}
             </div>
             <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 1 }}>
               Division Control Center
             </div>
             <div
               style={{
-                marginTop: 6,
+                marginTop: 4,
                 display: 'flex',
                 alignItems: 'center',
                 gap: 4,
                 color: '#60A5FA',
                 fontSize: 11,
                 fontWeight: 500,
+                fontFamily: 'monospace',
               }}
             >
               Danapur Ext. 4022
             </div>
           </div>
-        </div>
+        </button>
       </div>
     </aside>
   );
