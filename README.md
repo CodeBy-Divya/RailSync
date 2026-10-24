@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 # RailSync: Real-Time Inter-Departmental Railway Operations Coordination Platform
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
@@ -202,3 +203,6 @@ Built strictly in adherence to Indian Railways **AC Traction Manual (ACTM Vol. I
 This is a multilevel approval system software to reduce the decision making time and streamline the process among different departments to operate smoothly and move swiftly
 python react aws
 >>>>>>> 5014f16304cc80e27e0aba0f979fa456b870a4ba
+=======
+
+>>>>>>> 9131ed0c65e8a12a46dfc10de3a536bc535b38d6
