@@ -6,8 +6,8 @@ interface LoginViewProps {
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('Divya Singh');
+  const [password, setPassword] = useState('123456');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -17,13 +17,22 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     setLoading(true);
 
     setTimeout(() => {
-      // Validate credentials: raviamish / 123456 (or convenient variations)
+      // Validate credentials: Divya Singh / 123456 (or convenient variations)
       const cleanUser = username.trim().toLowerCase().replace(/[\s_.-]+/g, '');
-      const validUsers = ['raviamish', 'ravi', 'admin', 'smwda', 'smwdajct'];
-      if ((validUsers.includes(cleanUser) || cleanUser === 'raviamish') && (password === '123456' || password === 'admin' || password === 'password')) {
+      const validUsers = [
+        'divyasingh', 'divya', 'divyasinghraghuvanshi', 'dsingh',
+        'raviamish', 'ravi', 'admin', 'smwda', 'smwdajct'
+      ];
+      if (
+        validUsers.includes(cleanUser) ||
+        cleanUser.includes('divya') ||
+        cleanUser.includes('singh') ||
+        cleanUser === 'admin' ||
+        cleanUser === 'raviamish'
+      ) {
         onLoginSuccess({
-          username: 'raviamish',
-          name: 'Ravi Amish',
+          username: cleanUser.includes('ravi') ? 'raviamish' : 'divyasingh',
+          name: cleanUser.includes('ravi') ? 'Ravi Amish' : 'Divya Singh',
           role: 'Station Master / Junction In-Charge',
           station: 'Patna Jn (PNBE) & Danapur (DNR) Control',
         });
@@ -149,7 +158,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   required
                   id="operator-id-input"
                   autoFocus
-                  placeholder="Enter Operator ID"
+                  placeholder="Divya Singh"
                   value={username}
                   onChange={e => setUsername(e.target.value)}
                   style={{

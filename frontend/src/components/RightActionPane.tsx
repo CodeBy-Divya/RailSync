@@ -5,12 +5,12 @@ import {
   Lock, Unlock, Activity, Camera, MapPin, Users, Plus,
   Share2, Printer, X, Eye, Zap, ShieldCheck, ArrowRight,
   AlertTriangle, RotateCcw, ChevronLeft, ChevronRight,
-  FileText, Flag, Radio, Phone, Info
+  FileText, Flag, Radio, Phone, Info, OctagonX
 } from 'lucide-react';
-import { OperationalEvent, ApprovalRole, Department, PiggybackedDepartment, FieldPhotoProof } from '../types';
+import { OperationalEvent, ApprovalRole, Department, PiggybackedDepartment } from '../types';
 import {
   acquireFencingToken, activateWork, completeWork, clearBlock,
-  emergencyAbort, escalateSla, submitApproval, updateEventPhoto
+  emergencyAbort, escalateSla, submitApproval
 } from '../api';
 
 interface RightActionPaneProps {
@@ -19,6 +19,7 @@ interface RightActionPaneProps {
   onUpdateEvent?: (updated: OperationalEvent) => void;
   onNavigateAudit?: () => void;
   isHistoryTab?: boolean;
+  onReapproveEvent?: (eventId: string) => void;
 }
 
 // 7-step full lifecycle stepper per Indian Railways operating manual
@@ -38,6 +39,7 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
   onUpdateEvent,
   onNavigateAudit,
   isHistoryTab = false,
+  onReapproveEvent,
 }) => {
   const [loading, setLoading] = useState(false);
   const [loadingRole, setLoadingRole] = useState<string | null>(null);
@@ -310,61 +312,13 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
     setActionMsg(`✓ Successfully piggybacked ${newPiggyDept} onto this block window! Zero extra possession time requested.`);
   };
 
-  // Photo upload ref for portal
-  const portalFileInputRef = React.useRef<HTMLInputElement>(null);
-
-  // Handle Station Master / Desk photo replacement or upload
-  const handleUploadPhotoProof = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && onUpdateEvent) {
-      const reader = new FileReader();
-      reader.onload = async (uploadEv) => {
-        const base64Url = uploadEv.target?.result as string;
-        try {
-          localStorage.setItem('railsync_last_field_photo', base64Url);
-        } catch (_) {}
-
-        const latVal = event.field_photo?.lat ?? (event.section.includes('Danapur') || event.section.includes('Patna') ? 25.60281 : 20.7453);
-        const lngVal = event.field_photo?.lng ?? (event.section.includes('Danapur') || event.section.includes('Patna') ? 85.12110 : 78.6022);
-        const updatedPhoto: FieldPhotoProof = {
-          photo_url: base64Url,
-          lat: latVal,
-          lng: lngVal,
-          km_chainage: event.field_photo?.km_chainage || `KM ${event.km_start.toFixed(2)} (${event.track_id.replace(/_/g, ' ')})`,
-          uploaded_at: `${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} via Verification Portal`,
-          accuracy_meters: event.field_photo?.accuracy_meters || 3.2,
-          geofence_verified: true,
-          gang_supervisor: supervisorName,
-          crew_count: event.field_photo?.crew_count || 6,
-        };
-
-        const updatedEvent: OperationalEvent = {
-          ...event,
-          field_photo: updatedPhoto,
-        };
-
-        onUpdateEvent(updatedEvent);
-        setActionMsg('✓ On-site field verification photo proof updated with GPS watermark!');
-        setTimeout(() => setActionMsg(null), 5000);
-
-        try {
-          await updateEventPhoto(event.id, updatedPhoto);
-        } catch (_) {}
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   // Photo details
-  const photoUrl = event.field_photo?.photo_url || (event.id.includes('OHE') || event.description?.toLowerCase().includes('ohe') ? '/images/ohe_crew.jpg' : '/images/track_gang.jpg');
+  const photoUrl = event.field_photo?.photo_url || (event.id.includes('OHE') ? '/images/ohe_crew.jpg' : '/images/track_gang.jpg');
   const photoKm = event.field_photo?.km_chainage || `KM ${event.km_start.toFixed(2)} (${event.track_id.replace(/_/g, ' ')})`;
   const photoUploaded = event.field_photo?.uploaded_at || '10:14 AM via RailSync Field App';
   const supervisorName = event.field_photo?.gang_supervisor || `${event.originator_id} (Field Custodian)`;
-  const crewCount = event.field_photo?.crew_count || 6;
-  const photoGps = event.field_photo?.lat
-    ? `${event.field_photo.lat.toFixed(4)}° N, ${event.field_photo.lng.toFixed(4)}° E`
-    : (event.section.includes('Danapur') || event.section.includes('Patna') ? '25.6028° N, 85.1211° E' : '20.7453° N, 78.6022° E');
-  const photoPrecision = event.field_photo?.accuracy_meters ? `±${event.field_photo.accuracy_meters}m` : '±3.8m';
+
+  const isSuspended = Boolean(event.is_suspended || (event.status as string) === 'SUSPENDED - EMERGENCY STOP');
 
   return (
     <div
@@ -378,6 +332,78 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
         gap: 20,
       }}
     >
+      {/* ── Suspended Work Banner (Emergency Stop Active) ──────── */}
+      {isSuspended && (
+        <div
+          style={{
+            background: '#FEF2F2',
+            border: '1.5px solid #F87171',
+            borderRadius: 10,
+            padding: '16px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 16,
+            boxShadow: '0 2px 8px rgba(220, 38, 38, 0.08)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 260, flex: 1 }}>
+            <div
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: '50%',
+                background: '#FEE2E2',
+                border: '1.5px solid #FCA5A5',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#DC2626',
+                flexShrink: 0,
+              }}
+            >
+              <OctagonX size={20} />
+            </div>
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 800, color: '#991B1B', letterSpacing: '-0.01em' }}>
+                ⛔ WORK SUSPENDED — EMERGENCY STOP
+              </div>
+              <div style={{ fontSize: 12, color: '#7F1D1D', marginTop: 3 }}>
+                This work was suspended on {event.suspended_at ? new Date(event.suspended_at).toLocaleString() : 'recently'} by <strong>{event.suspended_by || 'Station Master Desk'}</strong>.
+              </div>
+              <div style={{ fontSize: 11.5, color: '#991B1B', fontWeight: 600, marginTop: 4 }}>
+                Reason: <span style={{ fontWeight: 400, fontStyle: 'italic' }}>{event.suspension_reason || 'Executive Emergency Safety Stop ordered.'}</span>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            id="pane-reapprove-btn"
+            onClick={() => onReapproveEvent && onReapproveEvent(event.id)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 7,
+              padding: '10px 20px',
+              borderRadius: 8,
+              border: 'none',
+              background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
+              color: '#FFFFFF',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(22,163,74,0.3)',
+              transition: 'all 0.15s ease',
+              flexShrink: 0,
+            }}
+          >
+            <CheckCircle2 size={16} />
+            <span>Re-approve &amp; Resume Work</span>
+          </button>
+        </div>
+      )}
       {/* ── Operational Corridor Awareness & Safety Status Strip ── */}
       <div
         id="corridor-awareness-banner"
@@ -965,17 +991,17 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11.5 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#0F172A', fontWeight: 600 }}>
               <MapPin size={13} color="#2563EB" />
-              <span>Location: {photoKm} (GPS: {photoGps})</span>
+              <span>Location: {photoKm} (GPS: 20.7453° N, 78.6022° E)</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#475569' }}>
               <Clock size={13} color="#64748B" />
-              <span>Timestamp: {photoUploaded} • Precision: {photoPrecision}</span>
+              <span>Timestamp: {photoUploaded} • Precision: ±3.8m</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#475569' }}>
               <Users size={13} color="#64748B" />
-              <span>Team Present: <strong>{crewCount} Personnel on Track</strong> (Safety Gear &amp; Helmets Verified)</span>
+              <span>Team Present: <strong>6 Personnel on Track</strong> (Safety Gear &amp; Helmets Verified)</span>
             </div>
-            <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ marginTop: 4 }}>
               <button
                 onClick={() => setShowPhotoModal(true)}
                 style={{
@@ -984,7 +1010,7 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
                   color: '#2563EB',
                   background: '#EFF6FF',
                   border: '1px solid #BFDBFE',
-                  padding: '5px 10px',
+                  padding: '4px 10px',
                   borderRadius: 6,
                   cursor: 'pointer',
                   display: 'inline-flex',
@@ -992,35 +1018,7 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
                   gap: 4,
                 }}
               >
-                <Eye size={12} /> Inspect Full-Resolution &amp; EXIF Metadata
-              </button>
-
-              <input
-                type="file"
-                accept="image/*"
-                ref={portalFileInputRef}
-                style={{ display: 'none' }}
-                onChange={handleUploadPhotoProof}
-              />
-
-              <button
-                onClick={() => portalFileInputRef.current?.click()}
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: '#166534',
-                  background: '#F0FDF4',
-                  border: '1px solid #86EFAC',
-                  padding: '5px 10px',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                }}
-                title="Upload or change on-site photo proof"
-              >
-                <Camera size={12} color="#16A34A" /> Attach / Replace Photo
+                <Eye size={12} /> Inspect Full-Resolution Photo &amp; EXIF Metadata
               </button>
             </div>
           </div>
@@ -1566,7 +1564,7 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
           </div>
           <div>
             <span style={{ color: '#64748B', display: 'block', fontSize: 10.5 }}>ISSUED BY:</span>
-            <strong style={{ color: '#0F172A' }}>Ravi Amish (SM/WDA)</strong>
+            <strong style={{ color: '#0F172A' }}>Divya Singh (SM/PNBE Desk #01)</strong>
           </div>
           <div>
             <span style={{ color: '#64748B', display: 'block', fontSize: 10.5 }}>VALID UNTIL:</span>
@@ -1941,7 +1939,7 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    Station Master (Ravi Amish, SM/PNBE Desk #01)
+                    Station Master (Divya Singh, SM/PNBE Desk #01)
                     {isSmApproved && (
                       <span style={{ fontSize: 10, fontWeight: 600, background: '#DCFCE7', color: '#16A34A', padding: '1px 6px', borderRadius: 4 }}>
                         ✓ MASTER SEAL GRANTED
@@ -2048,7 +2046,7 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
               <div>
                 <span style={{ color: '#64748B' }}>GPS Coordinates:</span>
                 <div style={{ fontWeight: 600, color: '#0F172A', fontFamily: 'JetBrains Mono, monospace' }}>
-                  {photoGps} (Track Center)
+                  20.7453° N, 78.6022° E (Track Center)
                 </div>
               </div>
               <div>
@@ -2138,7 +2136,7 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
               </div>
               <div>
                 <span style={{ color: '#64748B', display: 'block', fontSize: 10.5 }}>GRANTING STATION MASTER:</span>
-                <strong>Ravi Amish (SM/PNBE Desk #01)</strong>
+                <strong>Divya Singh (SM/PNBE Desk #01)</strong>
               </div>
             </div>
 

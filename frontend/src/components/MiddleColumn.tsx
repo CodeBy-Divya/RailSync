@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { OperationalEvent } from '../types';
-import { MapPin, AlertCircle, Clock, CheckCircle2, Activity } from 'lucide-react';
+import { MapPin, AlertCircle, Clock, CheckCircle2, Activity, OctagonX, AlertOctagon, RefreshCw } from 'lucide-react';
 import { CORRIDOR_SECTIONS, eventMatchesSection } from '../data/corridorData';
+import { ReapproveAllModal } from './ReapproveAllModal';
 
 interface MiddleColumnProps {
   events: OperationalEvent[];
@@ -14,6 +15,8 @@ interface MiddleColumnProps {
   selectedDept: string;
   onSelectDept: (dept: string) => void;
   searchQuery?: string;
+  highlightedEventId?: string | null;
+  onReapproveAll?: () => void;
 }
 
 const TAB_CONFIG = [
@@ -21,6 +24,70 @@ const TAB_CONFIG = [
   { label: 'Pending Approvals', sublabel: 'Awaiting Action' },
   { label: 'History', sublabel: 'All Sealed Records' },
 ];
+
+export const getEventCategory = (e: OperationalEvent): number => {
+  // If work was suspended via Emergency Stop, route to Pending Approvals (Tab 1)
+  if (e.is_suspended || (e.status as string) === 'SUSPENDED - EMERGENCY STOP') {
+    return 1;
+  }
+  if (e.fsm_stage === 7 || e.status === 'BLOCK_CLEARED' || e.status === 'AUDIT_LOCKED' || e.status === 'CANCELLED' || e.status === 'REJECTED') {
+    return 2;
+  }
+  if (e.fsm_stage === 6 || e.status === 'ACTIVE_IN_PROGRESS' || e.status === 'WORK_COMPLETED') {
+    return 0;
+  }
+  return 1;
+};
+
+// Helper to get normalized department across all Indian Railways wings
+export const getEventDept = (e: OperationalEvent): string => {
+  const idU = (e.id || '').toUpperCase();
+  const descU = (e.description || '').toUpperCase();
+  const origU = (e.originator_id || '').toUpperCase();
+
+  if (
+    e.stakeholders?.some(s => s.department === 'MECHANICAL_CW') ||
+    idU.includes('-CW-') || idU.includes('-MECH-') ||
+    descU.includes('C&W') || descU.includes('WHEEL') || descU.includes('BRAKE') || descU.includes('RAKE') ||
+    origU.includes('CW')
+  ) {
+    return 'MECHANICAL_CW';
+  }
+  if (
+    e.stakeholders?.some(s => s.department === 'SAFETY') ||
+    idU.includes('-SAF-') ||
+    descU.includes('SAFETY') || descU.includes('RPF') || descU.includes('DETONATOR') ||
+    origU.includes('SAF')
+  ) {
+    return 'SAFETY';
+  }
+  if (
+    e.stakeholders?.some(s => s.department === 'S_AND_T') ||
+    idU.includes('-SIG-') || idU.includes('-SNT-') ||
+    descU.includes('SIGNAL') || descU.includes('AXLE COUNTER') || descU.includes('INTERLOCKING') ||
+    origU.includes('SIG')
+  ) {
+    return 'S_AND_T';
+  }
+  if (
+    e.stakeholders?.some(s => s.department === 'CIVIL_P_WAY') ||
+    idU.includes('-ENG-') || idU.includes('-PWY-') ||
+    descU.includes('BALLAST') || descU.includes('P-WAY') || descU.includes('TAMPING') || descU.includes('WELDING') ||
+    origU.includes('PWAY')
+  ) {
+    return 'CIVIL_P_WAY';
+  }
+  if (
+    e.stakeholders?.some(s => s.department === 'OHE') ||
+    idU.includes('-OHE-') ||
+    e.impact_vector?.catenary_25kv_power_trip ||
+    descU.includes('CATENARY') || descU.includes('TRACTION') ||
+    origU.includes('OHE') || origU.includes('TPC')
+  ) {
+    return 'OHE';
+  }
+  return 'OPERATING';
+};
 
 export const MiddleColumn: React.FC<MiddleColumnProps> = ({
   events,
@@ -33,72 +100,11 @@ export const MiddleColumn: React.FC<MiddleColumnProps> = ({
   selectedDept,
   onSelectDept,
   searchQuery = '',
+  highlightedEventId,
+  onReapproveAll,
 }) => {
   const [historyScope, setHistoryScope] = React.useState<'ALL' | '30D' | '7D' | '24H'>('ALL');
-
-  // Helper to categorize an event by tab:
-  // Tab 0 = Ongoing Work (Stage 6: Active on Track)
-  // Tab 1 = Pending Approvals (Stages 1-5: Requisitions and Approvals)
-  // Tab 2 = History (Stage 7: Normalized & Sealed)
-  const getEventCategory = (e: OperationalEvent): number => {
-    if (e.fsm_stage === 7 || e.status === 'BLOCK_CLEARED' || e.status === 'AUDIT_LOCKED' || e.status === 'CANCELLED' || e.status === 'REJECTED') {
-      return 2; // History
-    }
-    if (e.fsm_stage === 6 || e.status === 'ACTIVE_IN_PROGRESS' || e.status === 'WORK_COMPLETED') {
-      return 0; // Ongoing Work
-    }
-    return 1; // Pending Approvals (Stage 1 to 5)
-  };
-
-  // Helper to get normalized department across all Indian Railways wings
-  const getEventDept = (e: OperationalEvent): string => {
-    const idU = (e.id || '').toUpperCase();
-    const descU = (e.description || '').toUpperCase();
-    const origU = (e.originator_id || '').toUpperCase();
-
-    if (
-      e.stakeholders?.some(s => s.department === 'MECHANICAL_CW') ||
-      idU.includes('-CW-') || idU.includes('-MECH-') ||
-      descU.includes('C&W') || descU.includes('WHEEL') || descU.includes('BRAKE') || descU.includes('RAKE') ||
-      origU.includes('CW')
-    ) {
-      return 'MECHANICAL_CW';
-    }
-    if (
-      e.stakeholders?.some(s => s.department === 'SAFETY') ||
-      idU.includes('-SAF-') ||
-      descU.includes('SAFETY') || descU.includes('RPF') || descU.includes('DETONATOR') ||
-      origU.includes('SAF')
-    ) {
-      return 'SAFETY';
-    }
-    if (
-      e.stakeholders?.some(s => s.department === 'S_AND_T') ||
-      idU.includes('-SIG-') || idU.includes('-SNT-') ||
-      descU.includes('SIGNAL') || descU.includes('AXLE COUNTER') || descU.includes('INTERLOCKING') ||
-      origU.includes('SIG')
-    ) {
-      return 'S_AND_T';
-    }
-    if (
-      e.stakeholders?.some(s => s.department === 'CIVIL_P_WAY') ||
-      idU.includes('-ENG-') || idU.includes('-PWY-') ||
-      descU.includes('BALLAST') || descU.includes('P-WAY') || descU.includes('TAMPING') || descU.includes('WELDING') ||
-      origU.includes('PWAY')
-    ) {
-      return 'CIVIL_P_WAY';
-    }
-    if (
-      e.stakeholders?.some(s => s.department === 'OHE') ||
-      idU.includes('-OHE-') ||
-      e.impact_vector?.catenary_25kv_power_trip ||
-      descU.includes('CATENARY') || descU.includes('TRACTION') ||
-      origU.includes('OHE') || origU.includes('TPC')
-    ) {
-      return 'OHE';
-    }
-    return 'OPERATING';
-  };
+  const [isReapproveModalOpen, setIsReapproveModalOpen] = useState(false);
 
   // Helper for real-time search query matching across all railway attributes
   const eventMatchesQuery = (e: OperationalEvent, query: string): boolean => {
@@ -167,17 +173,12 @@ export const MiddleColumn: React.FC<MiddleColumnProps> = ({
       if (e.fsm_stage >= 5) return true;
     }
 
-    // Mobile / Android app searches
-    if (q.includes('android') || q.includes('mobile') || q.includes('phone') || q.includes('field app')) {
-      if ((e.description || '').toLowerCase().includes('android') || (e.originator_id || '').toLowerCase().includes('android') || (e.id || '').toLowerCase().includes('mob')) return true;
-    }
-
     return false;
   };
 
   // Filter events based on active tab, selected section, department, search query, and history scope
   const filteredEvents = useMemo(() => {
-    return events.filter(e => {
+    const list = events.filter(e => {
       // 1. Tab category filter
       const cat = getEventCategory(e);
       if (cat !== activeTab) return false;
@@ -209,18 +210,18 @@ export const MiddleColumn: React.FC<MiddleColumnProps> = ({
       }
 
       return true;
-    }).sort((a, b) => {
-      // In Pending Approvals tab, put mobile app requisitions & newly submitted events at the top
-      if (activeTab === 1) {
-        const aIsMobile = (a.description || '').includes('[ANDROID FIELD APP]') || (a.id || '').includes('MOB');
-        const bIsMobile = (b.description || '').includes('[ANDROID FIELD APP]') || (b.id || '').includes('MOB');
-        if (aIsMobile && !bIsMobile) return -1;
-        if (!aIsMobile && bIsMobile) return 1;
-      }
-      const timeA = new Date(a.created_at || a.requested_start || 0).getTime();
-      const timeB = new Date(b.created_at || b.requested_start || 0).getTime();
-      return timeB - timeA;
     });
+
+    // In Pending Approvals tab, place suspended items at the very top so they are immediately noticed
+    if (activeTab === 1) {
+      return [...list].sort((a, b) => {
+        const aSusp = (a.is_suspended || (a.status as string) === 'SUSPENDED - EMERGENCY STOP') ? 1 : 0;
+        const bSusp = (b.is_suspended || (b.status as string) === 'SUSPENDED - EMERGENCY STOP') ? 1 : 0;
+        return bSusp - aSusp;
+      });
+    }
+
+    return list;
   }, [events, activeTab, selectedSectionId, selectedDept, searchQuery, historyScope]);
 
   // Auto-select first matching event when searching
@@ -458,6 +459,61 @@ export const MiddleColumn: React.FC<MiddleColumnProps> = ({
             gap: 8,
           }}
         >
+          {/* Re-approve All Suspended Banner (Shown in Tab 1 if any suspended works exist) */}
+          {activeTab === 1 && (
+            (() => {
+              const suspendedInTab = filteredEvents.filter(e => e.is_suspended || (e.status as string) === 'SUSPENDED - EMERGENCY STOP');
+              if (suspendedInTab.length === 0) return null;
+              return (
+                <div
+                  style={{
+                    padding: '9px 12px',
+                    borderRadius: 8,
+                    background: '#FEF2F2',
+                    border: '1.5px solid #FCA5A5',
+                    marginBottom: 4,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                    <OctagonX size={15} color="#DC2626" className="animate-pulse" style={{ flexShrink: 0 }} />
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: '#991B1B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {suspendedInTab.length} Work{suspendedInTab.length > 1 ? 's' : ''} Suspended
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    id="reapprove-all-btn"
+                    onClick={() => setIsReapproveModalOpen(true)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      padding: '5px 10px',
+                      borderRadius: 6,
+                      border: '1px solid #BFDBFE',
+                      background: '#EFF6FF',
+                      color: '#1D4ED8',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      boxShadow: '0 1px 2px rgba(37,99,235,0.08)',
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0,
+                    }}
+                    title="Re-approve all suspended track blocks"
+                  >
+                    <RefreshCw size={12} />
+                    <span>Re-approve all suspended ({suspendedInTab.length})</span>
+                  </button>
+                </div>
+              );
+            })()
+          )}
+
           {filteredEvents.length === 0 ? (
             <div
               style={{
@@ -500,7 +556,9 @@ export const MiddleColumn: React.FC<MiddleColumnProps> = ({
           ) : (
             filteredEvents.map(item => {
               const isSelected = selectedEvent?.id === item.id;
+              const isHighlighted = highlightedEventId === item.id;
               const deptLabel = getEventDept(item);
+              const isSuspended = Boolean(item.is_suspended || (item.status as string) === 'SUSPENDED - EMERGENCY STOP');
 
               // Real-Time Corridor Awareness State
               const isOngoing = item.fsm_stage === 6 || item.status === 'ACTIVE_IN_PROGRESS' || item.status === 'WORK_COMPLETED';
@@ -510,10 +568,16 @@ export const MiddleColumn: React.FC<MiddleColumnProps> = ({
               let statusBadgeBg = '#FFFBEB';
               let statusBadgeColor = '#92400E';
               let statusBadgeBorder = '#FCD34D';
-              let statusText = `Stage ${item.fsm_stage || 4} • Awaiting Sign-off`;
+              let statusText = `Stage ${item.fsm_stage || 2} - Awaiting Sign-off`;
               let awarenessPill = 'Approvals Pending';
 
-              if (isOngoing) {
+              if (isSuspended) {
+                statusBadgeBg = '#FEF2F2';
+                statusBadgeColor = '#DC2626';
+                statusBadgeBorder = '#FCA5A5';
+                statusText = '⛔ SUSPENDED';
+                awarenessPill = 'Stage: Awaiting Re-approval';
+              } else if (isOngoing) {
                 statusBadgeBg = '#FEF2F2';
                 statusBadgeColor = '#DC2626';
                 statusBadgeBorder = '#FCA5A5';
@@ -537,50 +601,39 @@ export const MiddleColumn: React.FC<MiddleColumnProps> = ({
                 <button
                   key={item.id}
                   id={`queue-card-${item.id}`}
-                  className={`queue-card${isSelected ? ' selected' : ''}`}
+                  className={`queue-card${isSelected ? ' selected' : ''}${isHighlighted ? ' ring-2 ring-blue-500 shadow-lg shadow-blue-500/20' : ''}`}
                   onClick={() => onSelectEvent(item)}
                   style={{
                     textAlign: 'left',
                     width: '100%',
                     padding: '12px 14px',
                     borderRadius: 8,
-                    background: isSelected ? '#EFF6FF' : '#FFFFFF',
-                    border: isSelected ? '1.5px solid #2563EB' : '1px solid #E2E8F0',
+                    background: isSelected
+                      ? (isSuspended ? '#FEF2F2' : '#EFF6FF')
+                      : (isHighlighted ? '#F0F9FF' : (isSuspended ? '#FFF8F8' : '#FFFFFF')),
+                    border: isSelected
+                      ? (isSuspended ? '1.5px solid #DC2626' : '1.5px solid #2563EB')
+                      : (isHighlighted ? '1.5px solid #3B82F6' : (isSuspended ? '1px solid #FECACA' : '1px solid #E2E8F0')),
                     cursor: 'pointer',
-                    boxShadow: isSelected ? '0 2px 8px rgba(37,99,235,0.08)' : '0 1px 2px rgba(0,0,0,0.02)',
+                    boxShadow: isHighlighted
+                      ? '0 0 0 2px rgba(37,99,235,0.25), 0 4px 12px rgba(37,99,235,0.1)'
+                      : (isSelected ? (isSuspended ? '0 2px 8px rgba(220,38,38,0.15)' : '0 2px 8px rgba(37,99,235,0.08)') : '0 1px 2px rgba(0,0,0,0.02)'),
                     transition: 'all 0.15s ease',
                   }}
                 >
                   {/* Row 1: ID & Dept */}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 700,
-                          fontFamily: 'JetBrains Mono, monospace',
-                          color: isSelected ? '#1D4ED8' : '#0F172A',
-                        }}
-                      >
-                        {item.id}
-                      </span>
-                      {((item.description || '').includes('[ANDROID FIELD APP]') || (item.id || '').includes('MOB')) && (
-                        <span
-                          style={{
-                            fontSize: 9.5,
-                            fontWeight: 700,
-                            padding: '1.5px 6px',
-                            borderRadius: 4,
-                            background: '#DCFCE7',
-                            color: '#166534',
-                            border: '1px solid #BBF7D0',
-                            letterSpacing: '0.02em',
-                          }}
-                        >
-                          📱 Mobile Requisition
-                        </span>
-                      )}
-                    </div>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        fontFamily: 'JetBrains Mono, monospace',
+                        color: isSuspended ? '#64748B' : (isSelected ? '#1D4ED8' : '#0F172A'),
+                        textDecoration: isSuspended ? 'line-through' : 'none',
+                      }}
+                    >
+                      {item.id}
+                    </span>
                     <span
                       style={{
                         fontSize: 9.5,
@@ -599,12 +652,12 @@ export const MiddleColumn: React.FC<MiddleColumnProps> = ({
 
                   {/* Row 2: Location */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5 }}>
-                    <MapPin size={11} color={isSelected ? '#2563EB' : '#64748B'} />
+                    <MapPin size={11} color={isSelected ? (isSuspended ? '#DC2626' : '#2563EB') : '#64748B'} />
                     <span
                       style={{
                         fontSize: 11.5,
                         fontWeight: 600,
-                        color: isSelected ? '#1E40AF' : '#334155',
+                        color: isSelected ? (isSuspended ? '#991B1B' : '#1E40AF') : '#334155',
                       }}
                     >
                       {item.section}
@@ -618,9 +671,10 @@ export const MiddleColumn: React.FC<MiddleColumnProps> = ({
                   <div
                     style={{
                       fontSize: 11,
-                      color: isSelected ? '#334155' : '#64748B',
+                      color: isSuspended ? '#64748B' : (isSelected ? '#334155' : '#64748B'),
+                      textDecoration: isSuspended ? 'line-through' : 'none',
                       lineHeight: 1.3,
-                      marginBottom: 6,
+                      marginBottom: isSuspended ? 4 : 6,
                       display: '-webkit-box',
                       WebkitLineClamp: 1,
                       WebkitBoxOrient: 'vertical',
@@ -629,6 +683,33 @@ export const MiddleColumn: React.FC<MiddleColumnProps> = ({
                   >
                     {item.description}
                   </div>
+
+                  {/* Suspension Info Banner if Suspended */}
+                  {isSuspended && (
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: '#B91C1C',
+                        marginBottom: 6,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        fontWeight: 500,
+                      }}
+                    >
+                      <AlertOctagon size={11} color="#DC2626" style={{ flexShrink: 0 }} />
+                      <span
+                        style={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                        title={`Suspended by ${item.suspended_by || 'Admin'}: ${item.suspension_reason || 'Emergency Safety Stop'}`}
+                      >
+                        Suspended by {item.suspended_by || 'Admin'} ({item.suspended_at ? new Date(item.suspended_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }) : '--:--'}): {item.suspension_reason || 'Emergency Safety Stop'}
+                      </span>
+                    </div>
+                  )}
 
                   {/* Row 4: Status / Stage Badge & Micro-Badges */}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
@@ -652,9 +733,9 @@ export const MiddleColumn: React.FC<MiddleColumnProps> = ({
                           fontWeight: 600,
                           padding: '1px 5px',
                           borderRadius: 4,
-                          background: isOngoing ? '#FEE2E2' : isNormalized ? '#F0FDF4' : '#F8FAFC',
-                          color: isOngoing ? '#B91C1C' : isNormalized ? '#15803D' : '#64748B',
-                          border: `1px solid ${isOngoing ? '#FCA5A5' : isNormalized ? '#86EFAC' : '#E2E8F0'}`,
+                          background: isOngoing ? '#FEE2E2' : isNormalized ? '#F0FDF4' : (isSuspended ? '#FEF3C7' : '#F8FAFC'),
+                          color: isOngoing ? '#B91C1C' : isNormalized ? '#15803D' : (isSuspended ? '#92400E' : '#64748B'),
+                          border: `1px solid ${isOngoing ? '#FCA5A5' : isNormalized ? '#86EFAC' : (isSuspended ? '#FCD34D' : '#E2E8F0')}`,
                         }}
                       >
                         {awarenessPill}
@@ -696,9 +777,15 @@ export const MiddleColumn: React.FC<MiddleColumnProps> = ({
                     </div>
 
                     {/* Stage icon */}
-                    {activeTab === 0 && <Activity size={12} color="#2563EB" style={{ flexShrink: 0 }} />}
-                    {activeTab === 1 && <Clock size={12} color="#B45309" style={{ flexShrink: 0 }} />}
-                    {activeTab === 2 && <CheckCircle2 size={12} color="#059669" style={{ flexShrink: 0 }} />}
+                    {isSuspended ? (
+                      <OctagonX size={12} color="#DC2626" style={{ flexShrink: 0 }} />
+                    ) : (
+                      <>
+                        {activeTab === 0 && <Activity size={12} color="#2563EB" style={{ flexShrink: 0 }} />}
+                        {activeTab === 1 && <Clock size={12} color="#B45309" style={{ flexShrink: 0 }} />}
+                        {activeTab === 2 && <CheckCircle2 size={12} color="#059669" style={{ flexShrink: 0 }} />}
+                      </>
+                    )}
                   </div>
                 </button>
               );
@@ -755,6 +842,16 @@ export const MiddleColumn: React.FC<MiddleColumnProps> = ({
           ))}
         </select>
       </div>
+
+      {/* ── Modal to Re-approve All Suspended Works ── */}
+      <ReapproveAllModal
+        isOpen={isReapproveModalOpen}
+        onClose={() => setIsReapproveModalOpen(false)}
+        onConfirm={() => {
+          onReapproveAll && onReapproveAll();
+        }}
+        suspendedCount={events.filter(e => e.is_suspended || (e.status as string) === 'SUSPENDED - EMERGENCY STOP').length}
+      />
     </div>
   );
 };

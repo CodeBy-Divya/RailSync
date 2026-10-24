@@ -174,17 +174,3 @@ export async function triggerChaos(durationSeconds: number = 5): Promise<any> {
   if (!res.ok) throw new Error('Failed to trigger chaos injection');
   return res.json();
 }
-
-export async function updateEventPhoto(eventId: string, photo: any): Promise<any> {
-  const res = await fetchWithTrace(`${API_BASE}/events/${eventId}/photo`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(photo),
-  });
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to attach photo to event');
-  }
-  return res.json();
-}
-

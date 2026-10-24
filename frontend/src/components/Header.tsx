@@ -133,9 +133,11 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={openRequisitionModal}
             className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg shadow-md shadow-blue-600/25 cursor-pointer transition-all shrink-0 ml-4"
+            aria-label="Create Work Request"
+            title="Create new Work Request (Statutory Approval Wizard)"
           >
             <FileCheck2 className="w-4 h-4" />
-            + New Requisition
+            + Work Request
           </button>
         </div>
       </div>

@@ -1,25 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Gauge,
   Activity,
   Flame,
   CheckCircle2,
   AlertTriangle,
   Clock,
   Cpu,
-  Server,
-  Zap,
-  RotateCcw,
   ShieldCheck,
-  ShieldAlert,
-  ArrowRight,
-  TrendingDown,
-  TrendingUp,
-  RefreshCw
 } from 'lucide-react';
 import { triggerChaos, fetchHealth } from '../api';
+import { EmergencyStopButton } from './EmergencyStopButton';
 
-export const ChaosSreDashboard: React.FC = () => {
+interface ChaosSreDashboardProps {
+  ongoingCount?: number;
+  currentUser?: { username: string; name: string; role: string; station: string } | null;
+  onActivateEmergencyStop?: (reason: string) => Promise<boolean> | boolean;
+}
+
+export const ChaosSreDashboard: React.FC<ChaosSreDashboardProps> = ({
+  ongoingCount = 0,
+  currentUser = null,
+  onActivateEmergencyStop,
+}) => {
   const [chaosActive, setChaosActive] = useState(false);
   const [stopwatchRunning, setStopwatchRunning] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
@@ -58,6 +60,7 @@ export const ChaosSreDashboard: React.FC = () => {
             setPhase('RESTORED');
             setStopwatchRunning(false);
             setChaosActive(false);
+            setStatusMsg('Outage Resolved: 100% of canary health probes passing. All services restored to nominal SLA.');
           }
           return next;
         });
@@ -66,7 +69,23 @@ export const ChaosSreDashboard: React.FC = () => {
     return () => clearInterval(timer);
   }, [stopwatchRunning]);
 
+  // When stopwatch finishes and reaches RESTORED, display completed state and automatically return to IDLE (00:00)
+  useEffect(() => {
+    let idleTimer: any;
+    if (phase === 'RESTORED') {
+      idleTimer = setTimeout(() => {
+        setPhase('IDLE');
+        setElapsedSec(0);
+        setStatusMsg(null);
+      }, 4000);
+    }
+    return () => {
+      if (idleTimer) clearTimeout(idleTimer);
+    };
+  }, [phase]);
+
   const handleTriggerChaos = async () => {
+    if (stopwatchRunning) return;
     setChaosActive(true);
     setStopwatchRunning(true);
     setElapsedSec(0);
@@ -79,12 +98,14 @@ export const ChaosSreDashboard: React.FC = () => {
     }
   };
 
-  const handleResetStopwatch = () => {
-    setStopwatchRunning(false);
-    setChaosActive(false);
-    setElapsedSec(0);
-    setPhase('IDLE');
-    setStatusMsg(null);
+  const handleFastForward = () => {
+    if (stopwatchRunning) {
+      setElapsedSec(184);
+      setPhase('RESTORED');
+      setStopwatchRunning(false);
+      setChaosActive(false);
+      setStatusMsg('Outage Resolved: 100% of canary health probes passing. All services restored to nominal SLA.');
+    }
   };
 
   return (
@@ -119,19 +140,6 @@ export const ChaosSreDashboard: React.FC = () => {
             >
               SCREEN 6 • SRE OBSERVABILITY &amp; CHAOS SUITE
             </span>
-            <span
-              style={{
-                fontSize: 10.5,
-                fontWeight: 700,
-                background: '#ECFDF5',
-                color: '#065F46',
-                padding: '3px 8px',
-                borderRadius: 4,
-                border: '1px solid #A7F3D0',
-              }}
-            >
-              FOUR GOLDEN SIGNALS MONITORING
-            </span>
           </div>
 
           <h1
@@ -151,7 +159,7 @@ export const ChaosSreDashboard: React.FC = () => {
         </div>
 
         {/* Chaos Action Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <button
             onClick={handleTriggerChaos}
             disabled={stopwatchRunning}
@@ -180,26 +188,12 @@ export const ChaosSreDashboard: React.FC = () => {
             <span>{chaosActive ? 'Chaos Outage Injected...' : 'Inject Chaos Kill (-9)'}</span>
           </button>
 
-          <button
-            onClick={handleResetStopwatch}
-            style={{
-              padding: '10px 14px',
-              borderRadius: 8,
-              border: '1px solid #CBD5E1',
-              background: '#FFFFFF',
-              color: '#475569',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 12.5,
-              fontWeight: 600,
-            }}
-            title="Reset telemetry & stopwatch"
-          >
-            <RotateCcw size={15} />
-            <span>Reset</span>
-          </button>
+          {/* Emergency Stop Button */}
+          <EmergencyStopButton
+            ongoingCount={ongoingCount}
+            currentUser={currentUser}
+            onActivate={onActivateEmergencyStop || (() => true)}
+          />
         </div>
       </div>
 
@@ -343,6 +337,7 @@ export const ChaosSreDashboard: React.FC = () => {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div
+              onClick={stopwatchRunning ? handleFastForward : undefined}
               style={{
                 padding: '6px 16px',
                 borderRadius: 8,
@@ -352,12 +347,15 @@ export const ChaosSreDashboard: React.FC = () => {
                 fontSize: 18,
                 fontWeight: 800,
                 letterSpacing: '0.04em',
+                cursor: stopwatchRunning ? 'pointer' : 'default',
+                userSelect: 'none',
               }}
+              title={stopwatchRunning ? 'Running auto-recovery (click to fast-forward)' : 'Auto-recovery stopwatch'}
             >
               {Math.floor(elapsedSec / 60).toString().padStart(2, '0')}:{(elapsedSec % 60).toString().padStart(2, '0')}
             </div>
             <div style={{ fontSize: 12, color: '#64748B', fontWeight: 600 }}>
-              Phase: <span style={{ color: '#2563EB', fontWeight: 800 }}>{phase}</span>
+              Phase: <span style={{ color: phase === 'RESTORED' ? '#16A34A' : '#2563EB', fontWeight: 800 }}>{phase}</span>
             </div>
           </div>
         </div>
@@ -371,7 +369,7 @@ export const ChaosSreDashboard: React.FC = () => {
               duration: '0s – 42s',
               desc: 'CloudWatch Synthetic Canary probe fails /healthz. 3 consecutive timeouts trigger Alarm.',
               active: phase === 'DETECTION',
-              passed: elapsedSec >= 42,
+              passed: elapsedSec >= 42 || phase === 'RESTORED',
             },
             {
               step: '2',
@@ -379,7 +377,7 @@ export const ChaosSreDashboard: React.FC = () => {
               duration: '42s – 70s',
               desc: 'ALB target group deregisters unhealthy task. Auto-remediation lambda dispatches.',
               active: phase === 'DIAGNOSIS',
-              passed: elapsedSec >= 70,
+              passed: elapsedSec >= 70 || phase === 'RESTORED',
             },
             {
               step: '3',
@@ -387,7 +385,7 @@ export const ChaosSreDashboard: React.FC = () => {
               duration: '70s – 144s',
               desc: 'ECS Fargate provisions replacement container. Redis read-replica promoted if needed.',
               active: phase === 'RECOVERY',
-              passed: elapsedSec >= 144,
+              passed: elapsedSec >= 144 || phase === 'RESTORED',
             },
             {
               step: '4',
@@ -395,7 +393,7 @@ export const ChaosSreDashboard: React.FC = () => {
               duration: '144s – 184s',
               desc: 'ALB target health check returns 200 OK. Traffic seamlessly restored.',
               active: phase === 'VERIFICATION',
-              passed: elapsedSec >= 184,
+              passed: elapsedSec >= 184 || phase === 'RESTORED',
             },
           ].map((item) => {
             const isCompleted = item.passed;

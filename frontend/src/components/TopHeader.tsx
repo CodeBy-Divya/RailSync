@@ -12,13 +12,17 @@ interface TopHeaderProps {
   events: OperationalEvent[];
   selectedEvent: OperationalEvent | null;
   ambientNotifications: string[];
-  activeView: 'workspace' | 'audit' | 'overview' | 'chaos' | 'android_app';
+  activeView: 'workspace' | 'audit' | 'overview' | 'today' | 'chaos' | 'messages';
   selectedSectionId: string;
   onSelectSection?: (secId: string) => void;
   onLogout?: () => void;
   searchQuery?: string;
   onSearchChange?: (q: string) => void;
   onOpenNewRequisition?: () => void;
+  onOpenWorkRequest?: () => void;
+  workRequestBtnRef?: React.RefObject<HTMLButtonElement | null>;
+  unreadMessagesCount?: number;
+  currentUser?: { username: string; name: string; role: string; station: string } | null;
 }
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
@@ -31,11 +35,25 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   searchQuery = '',
   onSearchChange,
   onOpenNewRequisition,
+  onOpenWorkRequest,
+  workRequestBtnRef,
+  unreadMessagesCount = 0,
+  currentUser,
 }) => {
   const [bellOpen, setBellOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [liveFeedOpen, setLiveFeedOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
+
+  const displayName = currentUser?.name || 'Divya Singh';
+  const displayRole = currentUser?.role || 'Station Master Desk';
+  const displayInitials = displayName
+    .split(' ')
+    .filter(Boolean)
+    .map(p => p[0])
+    .join('')
+    .substring(0, 2)
+    .toUpperCase() || 'DS';
 
   const opNotifs = ambientNotifications.filter(n => !n.includes('INITIAL_SNAPSHOT'));
 
@@ -152,46 +170,42 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             </div>
           )}
 
+          {activeView === 'today' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>
+                Today at a glance
+              </span>
+            </div>
+          )}
+
           {activeView === 'chaos' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>
                 SRE &amp; Chaos Suite
               </span>
-              <span style={{ color: '#CBD5E1', fontSize: 12 }}>/</span>
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: '#B45309',
-                  background: '#FEF3C7',
-                  padding: '2px 8px',
-                  borderRadius: 6,
-                  border: '1px solid #FDE68A',
-                }}
-              >
-                Four Golden Signals &amp; TTR
-              </span>
             </div>
           )}
 
-          {activeView === 'android_app' && (
+
+
+          {activeView === 'messages' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>
-                Frontline Field Mobile App
+                Messages
               </span>
               <span style={{ color: '#CBD5E1', fontSize: 12 }}>/</span>
               <span
                 style={{
                   fontSize: 11,
                   fontWeight: 600,
-                  color: '#065F46',
-                  background: '#ECFDF5',
+                  color: '#1D4ED8',
+                  background: '#EFF6FF',
                   padding: '2px 8px',
                   borderRadius: 6,
-                  border: '1px solid #A7F3D0',
+                  border: '1px solid #BFDBFE',
                 }}
               >
-                Android Interface 2 • Site Supervisor
+                Two-Way Station Master Clarification Desk
               </span>
             </div>
           )}
@@ -263,11 +277,15 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
         {/* ── Right: Live Feed + Bell + Profile ────── */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-          {/* New Requisition Action Button */}
-          {onOpenNewRequisition && (
+          {/* Work Request Action Button */}
+          {(onOpenWorkRequest || onOpenNewRequisition) && (
             <button
-              onClick={onOpenNewRequisition}
-              id="top-new-requisition-btn"
+              ref={workRequestBtnRef}
+              onClick={onOpenWorkRequest || onOpenNewRequisition}
+              id="top-work-request-btn"
+              role="button"
+              aria-label="Create Work Request"
+              aria-haspopup="dialog"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -286,10 +304,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               }}
               onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.1)'}
               onMouseLeave={e => e.currentTarget.style.filter = 'none'}
-              title="Create new Operational Event or Maintenance Block (Screen 2)"
+              title="Create new Work Request (Statutory Approval Wizard)"
             >
               <Plus size={15} color="#fff" strokeWidth={2.5} />
-              <span>New Requisition</span>
+              <span>Work Request</span>
             </button>
           )}
 
@@ -359,7 +377,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             id="notification-bell"
           >
             <Bell size={16} color="#475569" />
-            {opNotifs.length > 0 && (
+            {(opNotifs.length > 0 || unreadMessagesCount > 0) && (
               <span
                 style={{
                   position: 'absolute',
@@ -368,7 +386,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                   width: 16,
                   height: 16,
                   borderRadius: '50%',
-                  background: '#2563EB',
+                  background: unreadMessagesCount > 0 ? '#DC2626' : '#2563EB',
                   border: '2px solid #FFFFFF',
                   fontSize: 9,
                   fontWeight: 700,
@@ -378,7 +396,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                   justifyContent: 'center',
                 }}
               >
-                {Math.min(opNotifs.length, 9)}
+                {Math.min(opNotifs.length + unreadMessagesCount, 9)}
               </span>
             )}
           </button>
@@ -422,14 +440,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                   flexShrink: 0,
                 }}
               >
-                RA
+                {displayInitials}
               </div>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>
-                  Ravi Amish
+                  {displayName}
                 </div>
                 <div style={{ fontSize: 10, color: '#64748B', lineHeight: 1.2 }}>
-                  Station Master Desk
+                  {displayRole}
                 </div>
               </div>
             </div>
@@ -469,17 +487,17 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                       color: '#fff',
                     }}
                   >
-                    RA
+                    {displayInitials}
                   </div>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>
-                      Ravi Amish
+                      {displayName}
                     </div>
                     <div style={{ fontSize: 11, color: '#2563EB', fontWeight: 600 }}>
-                      Station Master (Shift In-Charge)
+                      {displayRole}
                     </div>
                     <div style={{ fontSize: 10, color: '#64748B' }}>
-                      Operating ID: ECR-SM-4402
+                      Operating ID: ECR-SM-5481
                     </div>
                   </div>
                 </div>
