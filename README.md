@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # RailSync: Real-Time Inter-Departmental Railway Operations Coordination Platform
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
@@ -196,3 +197,8 @@ locust -f tests/locustfile.py --headless -u 500 -r 20 --run-time 10m --host http
 
 ## 7. License & Compliance
 Built strictly in adherence to Indian Railways **AC Traction Manual (ACTM Vol. II)**, **General & Subsidiary Rules (G&SR Chapter IV)**, and the **Station Working Rules (SWR)**.
+=======
+# Railsync
+This is a multilevel approval system software to reduce the decision making time and streamline the process among different departments to operate smoothly and move swiftly
+python react aws
+>>>>>>> 5014f16304cc80e27e0aba0f979fa456b870a4ba
