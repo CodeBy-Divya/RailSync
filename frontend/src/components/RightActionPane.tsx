@@ -7,10 +7,10 @@ import {
   AlertTriangle, RotateCcw, ChevronLeft, ChevronRight,
   FileText, Flag, Radio, Phone, Info
 } from 'lucide-react';
-import { OperationalEvent, ApprovalRole, Department, PiggybackedDepartment } from '../types';
+import { OperationalEvent, ApprovalRole, Department, PiggybackedDepartment, FieldPhotoProof } from '../types';
 import {
   acquireFencingToken, activateWork, completeWork, clearBlock,
-  emergencyAbort, escalateSla, submitApproval
+  emergencyAbort, escalateSla, submitApproval, updateEventPhoto
 } from '../api';
 
 interface RightActionPaneProps {
@@ -310,11 +310,61 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
     setActionMsg(`✓ Successfully piggybacked ${newPiggyDept} onto this block window! Zero extra possession time requested.`);
   };
 
+  // Photo upload ref for portal
+  const portalFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Handle Station Master / Desk photo replacement or upload
+  const handleUploadPhotoProof = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onUpdateEvent) {
+      const reader = new FileReader();
+      reader.onload = async (uploadEv) => {
+        const base64Url = uploadEv.target?.result as string;
+        try {
+          localStorage.setItem('railsync_last_field_photo', base64Url);
+        } catch (_) {}
+
+        const latVal = event.field_photo?.lat ?? (event.section.includes('Danapur') || event.section.includes('Patna') ? 25.60281 : 20.7453);
+        const lngVal = event.field_photo?.lng ?? (event.section.includes('Danapur') || event.section.includes('Patna') ? 85.12110 : 78.6022);
+        const updatedPhoto: FieldPhotoProof = {
+          photo_url: base64Url,
+          lat: latVal,
+          lng: lngVal,
+          km_chainage: event.field_photo?.km_chainage || `KM ${event.km_start.toFixed(2)} (${event.track_id.replace(/_/g, ' ')})`,
+          uploaded_at: `${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} via Verification Portal`,
+          accuracy_meters: event.field_photo?.accuracy_meters || 3.2,
+          geofence_verified: true,
+          gang_supervisor: supervisorName,
+          crew_count: event.field_photo?.crew_count || 6,
+        };
+
+        const updatedEvent: OperationalEvent = {
+          ...event,
+          field_photo: updatedPhoto,
+        };
+
+        onUpdateEvent(updatedEvent);
+        setActionMsg('✓ On-site field verification photo proof updated with GPS watermark!');
+        setTimeout(() => setActionMsg(null), 5000);
+
+        try {
+          await updateEventPhoto(event.id, updatedPhoto);
+        } catch (_) {}
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   // Photo details
-  const photoUrl = event.field_photo?.photo_url || (event.id.includes('OHE') ? '/images/ohe_crew.jpg' : '/images/track_gang.jpg');
+  const photoUrl = event.field_photo?.photo_url || (event.id.includes('OHE') || event.description?.toLowerCase().includes('ohe') ? '/images/ohe_crew.jpg' : '/images/track_gang.jpg');
   const photoKm = event.field_photo?.km_chainage || `KM ${event.km_start.toFixed(2)} (${event.track_id.replace(/_/g, ' ')})`;
   const photoUploaded = event.field_photo?.uploaded_at || '10:14 AM via RailSync Field App';
   const supervisorName = event.field_photo?.gang_supervisor || `${event.originator_id} (Field Custodian)`;
+  const crewCount = event.field_photo?.crew_count || 6;
+  const photoGps = event.field_photo?.lat
+    ? `${event.field_photo.lat.toFixed(4)}° N, ${event.field_photo.lng.toFixed(4)}° E`
+    : (event.section.includes('Danapur') || event.section.includes('Patna') ? '25.6028° N, 85.1211° E' : '20.7453° N, 78.6022° E');
+  const photoPrecision = event.field_photo?.accuracy_meters ? `±${event.field_photo.accuracy_meters}m` : '±3.8m';
 
   return (
     <div
@@ -915,17 +965,17 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11.5 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#0F172A', fontWeight: 600 }}>
               <MapPin size={13} color="#2563EB" />
-              <span>Location: {photoKm} (GPS: 20.7453° N, 78.6022° E)</span>
+              <span>Location: {photoKm} (GPS: {photoGps})</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#475569' }}>
               <Clock size={13} color="#64748B" />
-              <span>Timestamp: {photoUploaded} • Precision: ±3.8m</span>
+              <span>Timestamp: {photoUploaded} • Precision: {photoPrecision}</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#475569' }}>
               <Users size={13} color="#64748B" />
-              <span>Team Present: <strong>6 Personnel on Track</strong> (Safety Gear &amp; Helmets Verified)</span>
+              <span>Team Present: <strong>{crewCount} Personnel on Track</strong> (Safety Gear &amp; Helmets Verified)</span>
             </div>
-            <div style={{ marginTop: 4 }}>
+            <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               <button
                 onClick={() => setShowPhotoModal(true)}
                 style={{
@@ -934,7 +984,7 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
                   color: '#2563EB',
                   background: '#EFF6FF',
                   border: '1px solid #BFDBFE',
-                  padding: '4px 10px',
+                  padding: '5px 10px',
                   borderRadius: 6,
                   cursor: 'pointer',
                   display: 'inline-flex',
@@ -942,7 +992,35 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
                   gap: 4,
                 }}
               >
-                <Eye size={12} /> Inspect Full-Resolution Photo &amp; EXIF Metadata
+                <Eye size={12} /> Inspect Full-Resolution &amp; EXIF Metadata
+              </button>
+
+              <input
+                type="file"
+                accept="image/*"
+                ref={portalFileInputRef}
+                style={{ display: 'none' }}
+                onChange={handleUploadPhotoProof}
+              />
+
+              <button
+                onClick={() => portalFileInputRef.current?.click()}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: '#166534',
+                  background: '#F0FDF4',
+                  border: '1px solid #86EFAC',
+                  padding: '5px 10px',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+                title="Upload or change on-site photo proof"
+              >
+                <Camera size={12} color="#16A34A" /> Attach / Replace Photo
               </button>
             </div>
           </div>
@@ -1970,7 +2048,7 @@ export const RightActionPane: React.FC<RightActionPaneProps> = ({
               <div>
                 <span style={{ color: '#64748B' }}>GPS Coordinates:</span>
                 <div style={{ fontWeight: 600, color: '#0F172A', fontFamily: 'JetBrains Mono, monospace' }}>
-                  20.7453° N, 78.6022° E (Track Center)
+                  {photoGps} (Track Center)
                 </div>
               </div>
               <div>

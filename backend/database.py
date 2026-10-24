@@ -100,6 +100,13 @@ def init_db():
     );
     """)
 
+    # Safe migration: ensure new columns exist in operational_events
+    for col in ["field_photo", "piggybacked_depts", "station_actions", "digital_permit"]:
+        try:
+            cursor.execute(f"ALTER TABLE operational_events ADD COLUMN {col} TEXT;")
+        except Exception:
+            pass
+
     conn.commit()
 
     # Purge legacy corridor data if present so database matches frontend

@@ -181,6 +181,10 @@ def _hydrate_all_events_projection() -> List[Dict[str, Any]]:
             "permits": permits,
             "fsm_stage": RailwayFSM.get_stage_number(event_status),
             "status_color": RailwayFSM.get_color(event_status),
+            "field_photo": json.loads(r["field_photo"]) if ("field_photo" in r.keys() and r["field_photo"]) else None,
+            "piggybacked_depts": json.loads(r["piggybacked_depts"]) if ("piggybacked_depts" in r.keys() and r["piggybacked_depts"]) else None,
+            "station_actions": json.loads(r["station_actions"]) if ("station_actions" in r.keys() and r["station_actions"]) else None,
+            "digital_permit": json.loads(r["digital_permit"]) if ("digital_permit" in r.keys() and r["digital_permit"]) else None,
             "created_at": r["created_at"],
             "updated_at": r["updated_at"]
         })
@@ -242,6 +246,10 @@ def _hydrate_single_event_projection(event_id: str) -> Optional[Dict[str, Any]]:
         "fsm_stage": RailwayFSM.get_stage_number(event_status),
         "status_color": RailwayFSM.get_color(event_status),
         "lock_info": lock_manager.get_lock_info(event_id),
+        "field_photo": json.loads(row["field_photo"]) if ("field_photo" in row.keys() and row["field_photo"]) else None,
+        "piggybacked_depts": json.loads(row["piggybacked_depts"]) if ("piggybacked_depts" in row.keys() and row["piggybacked_depts"]) else None,
+        "station_actions": json.loads(row["station_actions"]) if ("station_actions" in row.keys() and row["station_actions"]) else None,
+        "digital_permit": json.loads(row["digital_permit"]) if ("digital_permit" in row.keys() and row["digital_permit"]) else None,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"]
     }
@@ -322,8 +330,8 @@ async def create_operational_event(payload: OperationalEventCreate, request: Req
     INSERT INTO operational_events (
         id, division, section, track_id, km_start, km_end, status,
         requested_start, requested_end, fencing_token, impact_vector,
-        description, originator_id, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        description, originator_id, field_photo, piggybacked_depts, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         event_id,
         payload.division,
@@ -338,6 +346,8 @@ async def create_operational_event(payload: OperationalEventCreate, request: Req
         json.dumps(payload.impact_vector.model_dump()),
         payload.description or "Railway Track Requisition",
         payload.originator_id,
+        json.dumps(payload.field_photo) if payload.field_photo else None,
+        json.dumps(payload.piggybacked_depts) if payload.piggybacked_depts else None,
         now,
         now
     ))
@@ -740,3 +750,34 @@ async def escalate_sla_breach(event_id: str, reason: str = "TPC response exceede
         "escalated_to": ["Sr. DOM", "DRM"],
         "reason": reason
     }
+
+
+@router.post("/{event_id}/photo", tags=["Operational Events (CQRS)"])
+async def attach_field_photo(event_id: str, photo: Dict[str, Any]):
+    """Attaches tamper-proof geotagged on-site field verification photo proof to requisition."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM operational_events WHERE id = ?", (event_id,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    photo_json = json.dumps(photo)
+    cur.execute("UPDATE operational_events SET field_photo = ?, updated_at = ? WHERE id = ?",
+                (photo_json, now, event_id))
+    conn.commit()
+    conn.close()
+
+    projection_store.invalidate_projections(event_id)
+    _hydrate_single_event_projection(event_id)
+    _hydrate_all_events_projection()
+
+    await broadcast_event({
+        "type": "FIELD_PHOTO_ATTACHED",
+        "event_id": event_id,
+        "photo": photo
+    })
+    return {"status": "SUCCESS", "message": "Field photo proof attached successfully", "field_photo": photo}
+

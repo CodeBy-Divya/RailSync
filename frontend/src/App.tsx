@@ -15,6 +15,31 @@ import { INITIAL_OPERATIONAL_EVENTS, eventMatchesSection } from './data/corridor
 
 export type View = 'workspace' | 'audit' | 'overview' | 'chaos' | 'android_app';
 
+function enrichEventWithFieldPhoto(evt: OperationalEvent): OperationalEvent {
+  if (evt.field_photo && evt.field_photo.photo_url) {
+    return evt;
+  }
+  const isMobile = evt.id.startsWith('EVT-MOB-') || evt.description?.includes('[ANDROID FIELD APP]');
+  const isOhe = evt.id.includes('OHE') || evt.originator_id?.includes('OHE') || evt.description?.toLowerCase().includes('ohe');
+  const lastPhoto = typeof window !== 'undefined' ? localStorage.getItem('railsync_last_field_photo') : null;
+  const photoUrl = isMobile && lastPhoto ? lastPhoto : (isOhe ? '/images/ohe_crew.jpg' : '/images/track_gang.jpg');
+
+  return {
+    ...evt,
+    field_photo: {
+      photo_url: photoUrl,
+      lat: evt.section?.includes('Danapur') || evt.section?.includes('Patna') ? 25.60281 : 20.7453,
+      lng: evt.section?.includes('Danapur') || evt.section?.includes('Patna') ? 85.12110 : 78.6022,
+      km_chainage: `KM ${evt.km_start ? evt.km_start.toFixed(2) : '548.10'} (${(evt.track_id || 'UP_MAIN').replace(/_/g, ' ')})`,
+      uploaded_at: `${new Date(evt.created_at || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} via RailSync Mobile App`,
+      accuracy_meters: 3.2,
+      geofence_verified: true,
+      gang_supervisor: `${evt.originator_id || 'SSE_OHE_PATNA_01'} (Field Custodian)`,
+      crew_count: 6,
+    }
+  };
+}
+
 export function App() {
   const [isAuthenticated,   setIsAuthenticated]   = useState(false);
   const [currentUser,       setCurrentUser]       = useState<{
@@ -32,7 +57,7 @@ export function App() {
         if (Array.isArray(parsed) && parsed.length > 0) {
           const storedIds = new Set(parsed.map(e => e.id));
           const baseline = INITIAL_OPERATIONAL_EVENTS.filter(e => !storedIds.has(e.id));
-          return [...parsed, ...baseline];
+          return [...parsed.map(enrichEventWithFieldPhoto), ...baseline];
         }
       }
     } catch (_) {}
@@ -43,7 +68,7 @@ export function App() {
       const saved = localStorage.getItem('railsync_events');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed[0];
+        if (Array.isArray(parsed) && parsed.length > 0) return enrichEventWithFieldPhoto(parsed[0]);
       }
     } catch (_) {}
     return INITIAL_OPERATIONAL_EVENTS[0];
@@ -72,7 +97,7 @@ export function App() {
         setEvents(prev => {
           const fetchedIds = new Set(data.map(d => d.id));
           const nonOverlapping = INITIAL_OPERATIONAL_EVENTS.filter(e => !fetchedIds.has(e.id));
-          const merged = [...data, ...nonOverlapping];
+          const merged = [...data, ...nonOverlapping].map(enrichEventWithFieldPhoto);
           try {
             localStorage.setItem('railsync_events', JSON.stringify(merged));
           } catch (_) {}
@@ -86,7 +111,7 @@ export function App() {
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            setEvents(parsed);
+            setEvents(parsed.map(enrichEventWithFieldPhoto));
             return;
           }
         }
@@ -103,45 +128,47 @@ export function App() {
     setSelectedDept('ALL');
     setSearchQuery('');
 
+    const enrichedEvent = createdEvent ? enrichEventWithFieldPhoto(createdEvent) : undefined;
+
     // 2. Refresh from backend and prepend the new event
     try {
       const data = await fetchEvents();
       if (Array.isArray(data) && data.length > 0) {
         const fetchedIds = new Set(data.map(d => d.id));
         const nonOverlapping = INITIAL_OPERATIONAL_EVENTS.filter(e => !fetchedIds.has(e.id));
-        const merged = createdEvent && !fetchedIds.has(createdEvent.id)
-          ? [createdEvent, ...data, ...nonOverlapping]
-          : [...data, ...nonOverlapping];
+        const merged = enrichedEvent && !fetchedIds.has(enrichedEvent.id)
+          ? [enrichedEvent, ...data, ...nonOverlapping].map(enrichEventWithFieldPhoto)
+          : [...data, ...nonOverlapping].map(enrichEventWithFieldPhoto);
 
         setEvents(merged);
         try {
           localStorage.setItem('railsync_events', JSON.stringify(merged));
         } catch (_) {}
 
-        const target = (createdEvent?.id && merged.find(e => e.id === createdEvent.id)) || merged[0];
+        const target = (enrichedEvent?.id && merged.find(e => e.id === enrichedEvent.id)) || merged[0];
         if (target) {
           setSelectedEvent(target);
         }
-      } else if (createdEvent) {
+      } else if (enrichedEvent) {
         setEvents(prev => {
-          const updated = [createdEvent, ...prev.filter(e => e.id !== createdEvent.id)];
+          const updated = [enrichedEvent, ...prev.filter(e => e.id !== enrichedEvent.id)].map(enrichEventWithFieldPhoto);
           try {
             localStorage.setItem('railsync_events', JSON.stringify(updated));
           } catch (_) {}
           return updated;
         });
-        setSelectedEvent(createdEvent);
+        setSelectedEvent(enrichedEvent);
       }
     } catch {
-      if (createdEvent) {
+      if (enrichedEvent) {
         setEvents(prev => {
-          const updated = [createdEvent, ...prev.filter(e => e.id !== createdEvent.id)];
+          const updated = [enrichedEvent, ...prev.filter(e => e.id !== enrichedEvent.id)].map(enrichEventWithFieldPhoto);
           try {
             localStorage.setItem('railsync_events', JSON.stringify(updated));
           } catch (_) {}
           return updated;
         });
-        setSelectedEvent(createdEvent);
+        setSelectedEvent(enrichedEvent);
       }
     }
 

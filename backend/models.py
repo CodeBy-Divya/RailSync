@@ -115,6 +115,10 @@ class OperationalEventCreate(BaseModel):
     impact_vector: ImpactVector = Field(default_factory=ImpactVector)
     description: Optional[str] = "OHE Catenary Inspection and Contact Wire Replacement per ACTM Vol II Sec 20615"
     originator_id: str = "SSE_OHE_DNR_04"
+    field_photo: Optional[Dict[str, Any]] = None
+    piggybacked_depts: Optional[List[Dict[str, Any]]] = None
+    station_actions: Optional[Dict[str, Any]] = None
+    digital_permit: Optional[Dict[str, Any]] = None
 
 
 class ApprovalRequest(BaseModel):

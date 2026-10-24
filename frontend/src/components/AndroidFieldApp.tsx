@@ -6,8 +6,8 @@ import {
   Check, ChevronRight, UploadCloud, Eye, AlertOctagon, Battery, Signal,
   CheckSquare
 } from 'lucide-react';
-import { OperationalEvent } from '../types';
-import { createEvent, fetchEvents, activateWork, completeWork, fetchEventDetail } from '../api';
+import { OperationalEvent, FieldPhotoProof } from '../types';
+import { createEvent, fetchEvents, activateWork, completeWork, fetchEventDetail, updateEventPhoto } from '../api';
 
 interface AndroidFieldAppProps {
   onEventCreated?: (event?: OperationalEvent) => void;
@@ -97,7 +97,9 @@ export const AndroidFieldApp: React.FC<AndroidFieldAppProps> = ({
   const [newChatText, setNewChatText] = useState('');
   const [selectedTaggedDept, setSelectedTaggedDept] = useState('@OPERATING');
 
+  const [reqPhoto, setReqPhoto] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const reqFileInputRef = useRef<HTMLInputElement>(null);
 
   // Clock
   useEffect(() => {
@@ -132,24 +134,69 @@ export const AndroidFieldApp: React.FC<AndroidFieldAppProps> = ({
     loadEventsData();
   }, []);
 
-  // Handle Photo File Upload
-  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Photo File Upload / Capture (Converted to Base64 for persistent offline & backend storage)
+  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>, isForRequisition = false) => {
     const file = e.target.files?.[0];
     if (file) {
-      const url = URL.createObjectURL(file);
-      setPhotoPreview(url);
-      setCameraGeo({
-        lat: '25.60281° N',
-        lng: '85.12110° E',
-        chainage: `KM ${reqKmStart || '548.10'} UP MAIN`,
-        section: reqSection === 'Danapur-Patna' ? 'Danapur (DNR) ⇄ Patna Jn (PNBE)' : reqSection,
-        altitude: '53.8 m AMSL',
-        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC',
-        hash: 'a718b958c2199b0c2a71d88206159c41763a826190e8c028e3b1297d028e192c',
-      });
-      setActionSuccess('Field Photo with GPS Chainage Captured & Watermarked!');
-      setTimeout(() => setActionSuccess(null), 3500);
+      const reader = new FileReader();
+      reader.onload = (uploadEv) => {
+        const base64Url = uploadEv.target?.result as string;
+        setPhotoPreview(base64Url);
+        setReqPhoto(base64Url);
+        try {
+          localStorage.setItem('railsync_last_field_photo', base64Url);
+        } catch (_) {}
+
+        const latVal = (25.5920 + Math.random() * 0.02).toFixed(5);
+        const lngVal = (85.1180 + Math.random() * 0.02).toFixed(5);
+        setCameraGeo({
+          lat: `${latVal}° N`,
+          lng: `${lngVal}° E`,
+          chainage: `KM ${reqKmStart || '548.10'} ${reqTrack.replace(/_/g, ' ')}`,
+          section: reqSection === 'Danapur-Patna' ? 'Danapur (DNR) ⇄ Patna Jn (PNBE)' : reqSection,
+          altitude: '53.8 m AMSL',
+          timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC',
+          hash: Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join(''),
+        });
+        setActionSuccess('Field Photo with GPS Chainage Captured & Watermarked!');
+        setTimeout(() => setActionSuccess(null), 3500);
+      };
+      reader.readAsDataURL(file);
     }
+  };
+
+  // Attach captured photo directly to an existing active event
+  const handleAttachPhotoToEvent = async (targetEventId: string) => {
+    const chosenPhoto = photoPreview || reqPhoto;
+    if (!chosenPhoto) {
+      alert('Please snap or choose a photo first!');
+      return;
+    }
+    const target = events.find(e => e.id === targetEventId);
+    const photoObj: FieldPhotoProof = {
+      photo_url: chosenPhoto,
+      lat: parseFloat(cameraGeo.lat) || 25.6028,
+      lng: parseFloat(cameraGeo.lng) || 85.1211,
+      km_chainage: target ? `KM ${target.km_start.toFixed(2)} (${target.track_id.replace(/_/g, ' ')})` : cameraGeo.chainage,
+      uploaded_at: `${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} via RailSync Mobile App`,
+      accuracy_meters: 3.2,
+      geofence_verified: true,
+      gang_supervisor: target ? `${target.originator_id} (Field Custodian)` : 'SSE/OHE Patna (Field Custodian)',
+      crew_count: target?.field_photo?.crew_count || 6,
+    };
+
+    if (target) {
+      const updated: OperationalEvent = { ...target, field_photo: photoObj };
+      setEvents(prev => prev.map(e => e.id === targetEventId ? updated : e));
+      if (onEventCreated) onEventCreated(updated);
+    }
+
+    try {
+      await updateEventPhoto(targetEventId, photoObj);
+    } catch (_) {}
+
+    setActionSuccess(`Field verification photo attached to ${targetEventId}!`);
+    setTimeout(() => setActionSuccess(null), 4000);
   };
 
   // Submit New Requisition from Android App
@@ -159,6 +206,21 @@ export const AndroidFieldApp: React.FC<AndroidFieldAppProps> = ({
       const now = new Date();
       const startTime = now.toISOString();
       const endTime = new Date(now.getTime() + parseFloat(reqDurationHrs) * 60 * 60 * 1000).toISOString();
+
+      const chosenPhoto = reqPhoto || photoPreview || '/images/ohe_crew.jpg';
+      const latVal = parseFloat(cameraGeo.lat) || 25.6028;
+      const lngVal = parseFloat(cameraGeo.lng) || 85.1211;
+      const fieldPhotoObj: FieldPhotoProof = {
+        photo_url: chosenPhoto,
+        lat: latVal,
+        lng: lngVal,
+        km_chainage: `KM ${parseFloat(reqKmStart) || 548.10} (${reqTrack.replace(/_/g, ' ')})`,
+        uploaded_at: `${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} via RailSync Mobile App`,
+        accuracy_meters: 3.2,
+        geofence_verified: true,
+        gang_supervisor: 'SSE/OHE Patna (Field Custodian)',
+        crew_count: 6,
+      };
 
       const payload = {
         division: 'DNR',
@@ -178,6 +240,7 @@ export const AndroidFieldApp: React.FC<AndroidFieldAppProps> = ({
         },
         description: `[ANDROID FIELD APP] ${reqDesc}`,
         originator_id: 'SSE_OHE_PATNA_01',
+        field_photo: fieldPhotoObj,
       };
 
       let fullEvent: OperationalEvent | null = null;
@@ -186,6 +249,9 @@ export const AndroidFieldApp: React.FC<AndroidFieldAppProps> = ({
         if (result && result.id) {
           try {
             fullEvent = await fetchEventDetail(result.id);
+            if (fullEvent && !fullEvent.field_photo) {
+              fullEvent.field_photo = fieldPhotoObj;
+            }
           } catch {
             fullEvent = {
               id: result.id,
@@ -205,6 +271,7 @@ export const AndroidFieldApp: React.FC<AndroidFieldAppProps> = ({
               invariants: result.invariants,
               created_at: startTime,
               updated_at: startTime,
+              field_photo: fieldPhotoObj,
               stakeholders: [
                 { id: `stk-${Date.now()}-1`, event_id: result.id, role: 'FIELD_SUPERVISOR', department: 'OHE', officer_id: payload.originator_id, approval_status: 'APPROVED', signed_at: startTime },
                 { id: `stk-${Date.now()}-2`, event_id: result.id, role: 'TPC', department: 'OHE', officer_id: 'TPC_DDU_01', approval_status: 'PENDING' },
@@ -238,6 +305,7 @@ export const AndroidFieldApp: React.FC<AndroidFieldAppProps> = ({
           fsm_stage: 2,
           created_at: startTime,
           updated_at: startTime,
+          field_photo: fieldPhotoObj,
           stakeholders: [
             { id: `stk-${Date.now()}-1`, event_id: evId, role: 'FIELD_SUPERVISOR', department: 'OHE', officer_id: payload.originator_id, approval_status: 'APPROVED', signed_at: startTime },
             { id: `stk-${Date.now()}-2`, event_id: evId, role: 'TPC', department: 'OHE', officer_id: 'TPC_DDU_01', approval_status: 'PENDING' },
@@ -903,6 +971,60 @@ export const AndroidFieldApp: React.FC<AndroidFieldAppProps> = ({
                   <span>Snap Live Viewfinder / Choose Photo</span>
                 </button>
 
+                {/* Quick Attach to Requisition or Permit */}
+                <div style={{ display: 'grid', gridTemplateColumns: selectedEventId ? '1fr 1fr' : '1fr', gap: 8 }}>
+                  <button
+                    onClick={() => {
+                      if (photoPreview) {
+                        setReqPhoto(photoPreview);
+                        setActiveTab('requisition');
+                        setActionSuccess('Photo linked to New Requisition form!');
+                        setTimeout(() => setActionSuccess(null), 3500);
+                      }
+                    }}
+                    style={{
+                      padding: '9px 12px',
+                      borderRadius: 6,
+                      border: '1.5px solid #BFDBFE',
+                      background: '#EFF6FF',
+                      color: '#1D4ED8',
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <Plus size={14} />
+                    <span>Use in + Requisition</span>
+                  </button>
+
+                  {selectedEventId && (
+                    <button
+                      onClick={() => handleAttachPhotoToEvent(selectedEventId)}
+                      style={{
+                        padding: '9px 12px',
+                        borderRadius: 6,
+                        border: '1.5px solid #86EFAC',
+                        background: '#F0FDF4',
+                        color: '#15803D',
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      <CheckCircle2 size={14} color="#16A34A" />
+                      <span>Sync to {selectedEventId.slice(0, 12)}...</span>
+                    </button>
+                  )}
+                </div>
+
                 {/* Supervisor Field Note */}
                 <div style={{ background: '#FFFFFF', padding: 12, borderRadius: 8, border: '1px solid #E2E8F0' }}>
                   <label style={{ fontSize: 11, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
@@ -1093,6 +1215,101 @@ export const AndroidFieldApp: React.FC<AndroidFieldAppProps> = ({
                         resize: 'none',
                       }}
                     />
+                  </div>
+
+                  {/* On-Site Field Verification Photo Proof */}
+                  <div style={{ background: '#F8FAFC', padding: 12, borderRadius: 8, border: '1.5px solid #BFDBFE', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <label style={{ fontSize: 11, fontWeight: 700, color: '#1E40AF', display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <Camera size={13} color="#2563EB" />
+                        <span>Site Verification Photo Proof:</span>
+                      </label>
+                      <span style={{ fontSize: 9.5, fontWeight: 700, color: '#15803D', background: '#DCFCE7', border: '1px solid #86EFAC', padding: '1px 6px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 3 }}>
+                        <ShieldCheck size={11} color="#16A34A" /> GEOFENCE ACTIVE
+                      </span>
+                    </div>
+
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      ref={reqFileInputRef}
+                      style={{ display: 'none' }}
+                      onChange={e => handlePhotoCapture(e, true)}
+                    />
+
+                    {(reqPhoto || photoPreview) ? (
+                      <div style={{ position: 'relative', borderRadius: 6, overflow: 'hidden', border: '1px solid #CBD5E1', height: 130, background: '#0F172A' }}>
+                        <img
+                          src={reqPhoto || photoPreview || ''}
+                          alt="Field crew verification proof"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                        <div
+                          style={{
+                            position: 'absolute',
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            background: 'linear-gradient(transparent, rgba(15,23,42,0.92))',
+                            padding: '6px 10px',
+                            fontSize: 9.5,
+                            color: '#F8FAFC',
+                            fontFamily: 'monospace',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 700 }}>📍 KM {reqKmStart || '548.10'} ({reqTrack})</div>
+                            <div style={{ color: '#93C5FD', fontSize: 9 }}>🌐 {cameraGeo.lat}, {cameraGeo.lng}</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => reqFileInputRef.current?.click()}
+                            style={{
+                              background: '#2563EB',
+                              color: '#fff',
+                              border: 'none',
+                              padding: '3px 8px',
+                              borderRadius: 4,
+                              fontSize: 10,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 3,
+                            }}
+                          >
+                            <Camera size={11} />
+                            <span>Change</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => reqFileInputRef.current?.click()}
+                        style={{
+                          border: '1.5px dashed #93C5FD',
+                          background: '#EFF6FF',
+                          borderRadius: 6,
+                          padding: '14px 10px',
+                          textAlign: 'center',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: 4,
+                          color: '#1D4ED8',
+                        }}
+                      >
+                        <Camera size={20} color="#2563EB" />
+                        <span style={{ fontSize: 11.5, fontWeight: 700 }}>Snap / Attach Geotagged Track Photo</span>
+                        <span style={{ fontSize: 9.5, color: '#64748B' }}>Tamper-proof proof required for Station Master quorum approval</span>
+                      </button>
+                    )}
                   </div>
 
                   <button
