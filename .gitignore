@@ -1,5 +1,6 @@
 # Secrets
 .env
+.env.local
 
 # SQLite local dev DB (use PostgreSQL in Docker / production)
 backend/railsync.db
@@ -14,6 +15,12 @@ venv/
 # Node
 frontend/node_modules/
 frontend/dist/
+field-app/node_modules/
+field-app/dist/
+node_modules/
+dist/
+.vercel/
+App.zip
 
 # Terraform state & secrets
 infra/.terraform/

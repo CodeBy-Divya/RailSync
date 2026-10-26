@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { OperationalEvent } from '../types';
-import { MapPin, AlertCircle, Clock, CheckCircle2, Activity, OctagonX, AlertOctagon, RefreshCw } from 'lucide-react';
+import { MapPin, AlertCircle, Clock, CheckCircle2, Activity, OctagonX, AlertOctagon, RefreshCw, Camera, Smartphone } from 'lucide-react';
 import { CORRIDOR_SECTIONS, eventMatchesSection } from '../data/corridorData';
 import { ReapproveAllModal } from './ReapproveAllModal';
 
@@ -623,17 +623,58 @@ export const MiddleColumn: React.FC<MiddleColumnProps> = ({
                 >
                   {/* Row 1: ID & Dept */}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        fontFamily: 'JetBrains Mono, monospace',
-                        color: isSuspended ? '#64748B' : (isSelected ? '#1D4ED8' : '#0F172A'),
-                        textDecoration: isSuspended ? 'line-through' : 'none',
-                      }}
-                    >
-                      {item.id}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          fontFamily: 'JetBrains Mono, monospace',
+                          color: isSuspended ? '#64748B' : (isSelected ? '#1D4ED8' : '#0F172A'),
+                          textDecoration: isSuspended ? 'line-through' : 'none',
+                        }}
+                      >
+                        {item.id}
+                      </span>
+                      {(item.source === 'FIELD' || (item.originator_id || '').includes('SSE') || (item.description || '').includes('[ANDROID') || (item.created_by?.name)) && (
+                        <span
+                          style={{
+                            fontSize: 9,
+                            fontWeight: 700,
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            background: '#E0F2FE',
+                            color: '#0369A1',
+                            border: '1px solid #BAE6FD',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                          }}
+                        >
+                          <Smartphone size={9} />
+                          FROM FIELD ({item.created_by?.name || 'Divya Singh'})
+                        </span>
+                      )}
+                      {((item.photos && item.photos.length > 0) || item.field_photo) && (
+                        <span
+                          style={{
+                            fontSize: 9,
+                            fontWeight: 700,
+                            padding: '2px 5px',
+                            borderRadius: 4,
+                            background: '#DCFCE7',
+                            color: '#15803D',
+                            border: '1px solid #BBF7D0',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                          }}
+                          title={`${item.photos?.length || 1} field photo(s) attached`}
+                        >
+                          <Camera size={9} />
+                          {item.photos?.length || 1}
+                        </span>
+                      )}
+                    </div>
                     <span
                       style={{
                         fontSize: 9.5,

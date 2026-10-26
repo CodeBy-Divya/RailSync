@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { OperationalEvent, AuditBlock } from '../types';
 import { getEventCategory } from '../components/MiddleColumn';
 import { INITIAL_OPERATIONAL_EVENTS } from '../data/corridorData';
+import { syncClient } from '../syncClient';
 
 export const USER_EVENTS_STORAGE_KEY = 'railsync_created_events_v2';
 export const EMERGENCY_STOP_STORAGE_KEY = 'railsync_emergency_stop_state_v1';
@@ -175,6 +176,9 @@ export function useEmergencyStop(
     try {
       localStorage.setItem(EMERGENCY_STOP_STORAGE_KEY, JSON.stringify(newEmergencyState));
     } catch (_) {}
+
+    // Multi-origin broadcast to Field App via shared serverless API
+    syncClient.activateEmergencyStop(reason.trim(), userDisplay).catch(() => {});
 
     // 4. Append Audit Block to Ledger
     const auditBlockNumber = 2050 + Math.floor(Math.random() * 500);
@@ -372,6 +376,9 @@ export function useEmergencyStop(
     if (onWorkResumed) {
       onWorkResumed(resumedCount, remainingSuspendedCount, actualResumedIds);
     }
+
+    // Multi-origin broadcast resumption to Field App via shared serverless API
+    syncClient.resumeEmergency().catch(() => {});
   }, [currentUser, onAddAmbientNotification, onWorkResumed, setEvents]);
 
   // Re-approve single suspended event

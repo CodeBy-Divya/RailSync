@@ -23,6 +23,8 @@ interface TopHeaderProps {
   workRequestBtnRef?: React.RefObject<HTMLButtonElement | null>;
   unreadMessagesCount?: number;
   currentUser?: { username: string; name: string; role: string; station: string } | null;
+  connectionState?: 'CONNECTED' | 'RECONNECTING' | 'OFFLINE';
+  activeSosCount?: number;
 }
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
@@ -39,6 +41,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   workRequestBtnRef,
   unreadMessagesCount = 0,
   currentUser,
+  connectionState = 'CONNECTED',
+  activeSosCount = 0,
 }) => {
   const [bellOpen, setBellOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -321,33 +325,49 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               gap: 6,
               padding: '6px 12px',
               borderRadius: 99,
-              background: '#F0FDF4',
-              border: '1.5px solid #86EFAC',
+              background: connectionState === 'CONNECTED' ? '#F0FDF4' : connectionState === 'RECONNECTING' ? '#FFFBEB' : '#FEF2F2',
+              border: `1.5px solid ${connectionState === 'CONNECTED' ? '#86EFAC' : connectionState === 'RECONNECTING' ? '#FDE68A' : '#FECACA'}`,
               fontSize: 11,
               fontWeight: 700,
-              color: '#15803D',
+              color: connectionState === 'CONNECTED' ? '#15803D' : connectionState === 'RECONNECTING' ? '#B45309' : '#B91C1C',
               cursor: 'pointer',
               transition: 'all 0.15s ease',
             }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = '#DCFCE7';
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = '#F0FDF4';
-            }}
-            title="Click to open Live Station Telemetry Feed"
+            title={`Real-Time SSE Sync: ${connectionState}. Click to open Live Station Telemetry Feed`}
           >
             <span
               style={{
                 width: 7,
                 height: 7,
                 borderRadius: '50%',
-                background: '#16A34A',
-                boxShadow: '0 0 0 2px rgba(22,163,74,0.3)',
+                background: connectionState === 'CONNECTED' ? '#16A34A' : connectionState === 'RECONNECTING' ? '#F59E0B' : '#EF4444',
+                boxShadow: `0 0 0 2px ${connectionState === 'CONNECTED' ? 'rgba(22,163,74,0.3)' : connectionState === 'RECONNECTING' ? 'rgba(245,158,11,0.3)' : 'rgba(239,68,68,0.3)'}`,
               }}
             />
-            <span>Live Station Feed</span>
+            <span>{connectionState === 'CONNECTED' ? 'Live Station Feed' : connectionState === 'RECONNECTING' ? 'Reconnecting...' : 'Offline (Cached)'}</span>
           </button>
+
+          {/* Critical SOS Beacon if any active */}
+          {activeSosCount > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '4px 10px',
+                borderRadius: 99,
+                background: '#FEF2F2',
+                border: '1.5px solid #EF4444',
+                color: '#DC2626',
+                fontSize: 10.5,
+                fontWeight: 800,
+                letterSpacing: '0.02em',
+              }}
+            >
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#DC2626' }} />
+              <span>SOS ACTIVE ({activeSosCount})</span>
+            </div>
+          )}
 
           {/* Notification Bell */}
           <button

@@ -21,7 +21,9 @@ import { MessagesPage }      from './components/MessagesPage';
 import { useChatStore }      from './hooks/useChatStore';
 import { SupportDrawer }     from './components/support/SupportDrawer';
 import { useSupportStore }   from './hooks/useSupportStore';
-import { CheckCircle2, X }   from 'lucide-react';
+import { CheckCircle2, X, AlertOctagon }   from 'lucide-react';
+import { syncClient, workRequestToOperationalEvent } from './syncClient';
+import { WorkRequest, WorkPhoto, SosAlert } from './shared/types';
 
 export type View = 'workspace' | 'audit' | 'overview' | 'today' | 'chaos' | 'messages';
 
@@ -69,6 +71,8 @@ export function App() {
   const [wsConnected,       setWsConnected]       = useState(false);
   const [canaryHealthy,     setCanaryHealthy]     = useState(true);
   const [isOfflineMode,     setIsOfflineMode]     = useState(false);
+  const [connectionState,   setConnectionState]   = useState<'CONNECTED' | 'RECONNECTING' | 'OFFLINE'>(syncClient.getConnectionState());
+  const [activeSosAlert,    setActiveSosAlert]    = useState<SosAlert | null>(null);
   const [ambientNotifs,     setAmbientNotifs]     = useState<string[]>([
     '23:05:12Z [TPC-DDU]: Circuit breaker trip telemetry verified at Feeding Post FP-02 (Danapur TSS).',
     '23:04:45Z [SM-PNBE]: Physical point clamp #14A padlocked. Reverse route locked against Up Main at Patna Jn.',
@@ -325,6 +329,116 @@ export function App() {
     };
   }, [loadEvents]);
 
+  // ── Real-Time Multi-Origin Sync Client Subscriptions ────────
+  useEffect(() => {
+    const unsubConn = syncClient.on('connection.change', (state) => {
+      setConnectionState(state);
+      setIsOfflineMode(state === 'OFFLINE');
+    });
+
+    const unsubCreated = syncClient.on('work.created', (newReq: WorkRequest) => {
+      const newEvent = workRequestToOperationalEvent(newReq);
+      setEvents(prev => {
+        const filtered = prev.filter(e => e.id !== newEvent.id);
+        return [newEvent, ...filtered];
+      });
+
+      const creatorName = newReq.createdBy?.name || 'Field Crew';
+      const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
+      setAmbientNotifs(prev => [
+        `${ts}Z [FIELD-REQUISITION]: New requisition received from ${creatorName}: ${newReq.id} (${newReq.section} • ${newReq.trackId}) [${newReq.photos?.length || 0} photo(s)]`,
+        ...prev.slice(0, 30),
+      ]);
+      setHighlightedEventId(newEvent.id);
+      setSelectedEvent(newEvent);
+      setActiveTab(1); // 1 = Pending Approvals
+
+      setToastMessage(`⚡ New field requisition ${newReq.id} received from ${creatorName}!`);
+      setTimeout(() => setToastMessage(null), 6000);
+    });
+
+    const unsubUpdated = syncClient.on('work.updated', (updatedReq: WorkRequest) => {
+      const updatedEvent = workRequestToOperationalEvent(updatedReq);
+      setEvents(prev => prev.map(e => e.id === updatedEvent.id ? { ...e, ...updatedEvent } : e));
+    });
+
+    const unsubApproved = syncClient.on('work.approved', (req: WorkRequest) => {
+      const updatedEvent = workRequestToOperationalEvent(req);
+      setEvents(prev => prev.map(e => e.id === updatedEvent.id ? { ...e, ...updatedEvent } : e));
+    });
+
+    const unsubCommenced = syncClient.on('work.commenced', (req: WorkRequest) => {
+      const updatedEvent = workRequestToOperationalEvent(req);
+      setEvents(prev => prev.map(e => e.id === updatedEvent.id ? { ...e, ...updatedEvent } : e));
+      const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
+      setAmbientNotifs(prev => [
+        `${ts}Z [FIELD-COMMENCE]: Work commenced on track for ${req.id} (Fencing Token Verified)`,
+        ...prev.slice(0, 30),
+      ]);
+      setToastMessage(`Work Commenced on track for ${req.id}`);
+      setTimeout(() => setToastMessage(null), 4000);
+    });
+
+    const unsubCompleted = syncClient.on('work.completed', (req: WorkRequest) => {
+      const updatedEvent = workRequestToOperationalEvent(req);
+      setEvents(prev => prev.map(e => e.id === updatedEvent.id ? { ...e, ...updatedEvent } : e));
+      const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
+      setAmbientNotifs(prev => [
+        `${ts}Z [FIELD-COMPLETE]: Work completed on track for ${req.id}. Track fit certificate signed.`,
+        ...prev.slice(0, 30),
+      ]);
+      setToastMessage(`Work Completed & Block Cleared for ${req.id}`);
+      setTimeout(() => setToastMessage(null), 4000);
+    });
+
+    const unsubPhoto = syncClient.on('photo.added', (photo: WorkPhoto) => {
+      setEvents(prev => prev.map(e => {
+        if (e.id === photo.workRequestId) {
+          const currentPhotos = e.photos || [];
+          const updatedPhotos = [photo, ...currentPhotos.filter(p => p.id !== photo.id)];
+          return {
+            ...e,
+            photos: updatedPhotos,
+            field_photo: {
+              photo_url: photo.url,
+              lat: photo.gps.lat,
+              lng: photo.gps.lng,
+              km_chainage: photo.chainage,
+              uploaded_at: photo.capturedAt,
+              accuracy_meters: photo.gps.accuracyM,
+              geofence_verified: photo.geofenceStatus === 'MATCH VERIFIED',
+              gang_supervisor: photo.capturedBy,
+              crew_count: photo.crewPresent || 6,
+              sha256: photo.sha256,
+              stage: photo.stage,
+            }
+          };
+        }
+        return e;
+      }));
+    });
+
+    const unsubSos = syncClient.on('sos.raised', (alert: SosAlert) => {
+      setActiveSosAlert(alert);
+      const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
+      setAmbientNotifs(prev => [
+        `🚨 ${ts}Z [EMERGENCY SOS]: CRITICAL ALARM raised by ${alert.supervisorName} (${alert.department}) at ${alert.section} • ${alert.chainage}!`,
+        ...prev.slice(0, 30),
+      ]);
+    });
+
+    return () => {
+      unsubConn();
+      unsubCreated();
+      unsubUpdated();
+      unsubApproved();
+      unsubCommenced();
+      unsubCompleted();
+      unsubPhoto();
+      unsubSos();
+    };
+  }, []);
+
   // ── Ensure selectedEvent always belongs to the current section filter ──
   useEffect(() => {
     if (selectedSectionId !== 'ALL' && selectedEvent) {
@@ -414,7 +528,93 @@ export function App() {
           workRequestBtnRef={workRequestBtnRef}
           unreadMessagesCount={chatStore.unreadCount}
           currentUser={currentUser}
+          connectionState={connectionState}
+          activeSosCount={activeSosAlert ? 1 : 0}
         />
+
+        {/* ── Real-Time SOS Alert Banner ── */}
+        {activeSosAlert && (
+          <div
+            id="active-sos-alarm-banner"
+            style={{
+              background: 'linear-gradient(135deg, #DC2626 0%, #B91C1C 100%)',
+              color: '#FFFFFF',
+              padding: '12px 24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              boxShadow: '0 4px 12px rgba(220,38,38,0.4)',
+              zIndex: 90,
+              flexWrap: 'wrap',
+              gap: 12,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <AlertOctagon size={20} color="#FFFFFF" />
+              </div>
+              <div>
+                <div style={{ fontSize: 13.5, fontWeight: 900, letterSpacing: '0.02em', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>🚨 STATUTORY TRACK EMERGENCY (SOS) ACTIVATED</span>
+                  <span style={{ fontSize: 10.5, background: '#FFFFFF', color: '#DC2626', padding: '1px 8px', borderRadius: 4, fontWeight: 800 }}>
+                    PRIORITY 1
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, color: '#FEE2E2', marginTop: 2 }}>
+                  Raised by <strong>{activeSosAlert.supervisorName}</strong> ({activeSosAlert.department}) at <strong>{activeSosAlert.section} • {activeSosAlert.chainage}</strong> (GPS: {activeSosAlert.gps.lat.toFixed(4)}° N, {activeSosAlert.gps.lng.toFixed(4)}° E)
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button
+                onClick={() => {
+                  setSelectedSectionId('ALL');
+                  setActiveTab(0); // Ongoing Work
+                  setActiveView('workspace');
+                }}
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: 6,
+                  border: '1px solid rgba(255,255,255,0.4)',
+                  background: 'rgba(255,255,255,0.15)',
+                  color: '#FFFFFF',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Inspect Section
+              </button>
+              <button
+                onClick={() => setActiveSosAlert(null)}
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: 6,
+                  border: 'none',
+                  background: '#FFFFFF',
+                  color: '#B91C1C',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                }}
+              >
+                Acknowledge Alarm
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ── Persistent Emergency Stop Active Banner ── */}
         <EmergencyBanner

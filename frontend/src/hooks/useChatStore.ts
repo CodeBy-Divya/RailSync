@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { AuditBlock } from '../types';
 import { saveAuditBlock } from './useEmergencyStop';
+import { syncClient } from '../syncClient';
 
 export interface ChatPhoto {
   id: string;
@@ -210,6 +211,41 @@ export function useChatStore(currentUser?: { name: string; role: string; departm
     }
   }, [messages]);
 
+  // Multi-origin real-time sync with Field App
+  useEffect(() => {
+    const unsub = syncClient.on('message.new', (incoming: any) => {
+      setMessages(prev => {
+        if (prev.some(m => m.id === incoming.id || (m.text === incoming.text && m.sender === incoming.sender))) {
+          return prev;
+        }
+        const timeStr = incoming.timestamp
+          ? new Date(incoming.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' UTC'
+          : new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' UTC';
+
+        return [
+          ...prev,
+          {
+            id: incoming.id,
+            sender: incoming.sender,
+            role: incoming.role || 'FIELD_SUPERVISOR',
+            department: incoming.department || 'OHE',
+            text: incoming.text,
+            timestamp: timeStr,
+            createdAt: incoming.timestamp || new Date().toISOString(),
+            taggedDepts: incoming.taggedDepts || [],
+            photos: incoming.photoUrl ? [{ id: 'p-1', url: incoming.photoUrl, timestamp: incoming.timestamp }] : [],
+            channel: incoming.channel || 'all',
+            status: 'delivered',
+          },
+        ];
+      });
+    });
+
+    return () => {
+      unsub();
+    };
+  }, []);
+
   // Calculate unread count
   const unreadCount = unreadIds.length;
 
@@ -305,10 +341,18 @@ export function useChatStore(currentUser?: { name: string; role: string; departm
       // 1. Optimistic Update
       setMessages(prev => [...prev, newMsg]);
 
-      // Broadcast to other tabs
+      // Broadcast to other tabs & multi-origin serverless API
       try {
         broadcastRef?.postMessage({ type: 'NEW_MESSAGE', message: newMsg });
       } catch (_) {}
+
+      syncClient.sendMessage({
+        sender: senderName,
+        role: senderRole,
+        text: text.trim(),
+        taggedDepts,
+        channel,
+      }).catch(() => {});
 
       // 2. Transition from 'sending' to 'delivered'
       setTimeout(() => {
